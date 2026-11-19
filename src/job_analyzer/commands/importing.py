@@ -17,6 +17,7 @@ from job_analyzer.cv import find_cv, save_cv_details
 from job_analyzer.matching import evaluate
 from job_analyzer.profile import CountryBoards, load_profile, save_profile
 from job_analyzer.setup import describe
+from job_analyzer.search import load_candidates
 from job_analyzer.specs import SPECS, validation_errors
 
 
@@ -31,6 +32,8 @@ def do_import(kind: str, file: Path, url: str | None = None, site: str | None = 
         return 2
 
     if kind == "job":
+        if url:
+            fill_from_source(obj, url)
         rec = jobs.add_job(obj, url=url, site=site)
         print(f"JOB_ID={rec.id}")
         print_job(obj)
@@ -59,6 +62,26 @@ def do_import(kind: str, file: Path, url: str | None = None, site: str | None = 
     else:
         print(f"'{kind}' is valid (nothing to store).")
     return 0
+
+
+def fill_from_source(job, url: str) -> None:
+    """Fill facts the posting text didn't state from the run's candidate data.
+
+    Official APIs/feeds give the publish date and remote status as data, but the job text
+    an analyst reads often doesn't repeat them. Code copies them over; it never overrides
+    what the posting itself says.
+    """
+    cand = next((c for c in load_candidates() if c.id == jobs.url_id(url)), None)
+    if cand is None:
+        return
+    if job.posted_date is None and cand.posted_date:
+        job.posted_date = cand.posted_date
+    if job.remote_policy == "unknown" and cand.location:
+        loc = cand.location.casefold()
+        if "hybrid" in loc:
+            job.remote_policy = "hybrid"
+        elif "remote" in loc or "anywhere" in loc or "worldwide" in loc:
+            job.remote_policy = "remote"
 
 
 def _clean_domain(raw: str) -> str:

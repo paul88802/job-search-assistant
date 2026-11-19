@@ -33,7 +33,10 @@ ErrorType = Literal["access_failure", "blocked", "rate_limited", "other"]
 # Sites that block automated reading (login walls, 403/429 responses), as seen in real runs.
 # Their postings are not sent to analysts: a readable copy is preferred when one exists,
 # otherwise they go to the user's "check these yourself" list with the link.
-HARD_TO_READ = ("linkedin.com", "indeed.", "glassdoor.", "weworkremotely.com")
+HARD_TO_READ = ("linkedin.com", "indeed.", "glassdoor.", "weworkremotely.com",
+                # Posting pages time out on every fetch (6 of 6 in real runs); their LIST pages
+                # still work, so searchers find these postings and the user gets the links.
+                "stepstone.", "ictjob.")
 
 GENDER_TAGS = re.compile(r"\((?:m|f|h|v|x|d|w)(?:\s*[/|,]\s*(?:m|f|h|v|x|d|w))+\)|\b(?:m|f|h)/(?:f|v|h|m)(?:/(?:x|d))?\b", re.I)
 COMPANY_SUFFIXES = re.compile(r"\b(?:nv|sa|bv|bvba|srl|sprl|ltd|limited|inc|llc|gmbh|ag|plc|group)\b\.?", re.I)

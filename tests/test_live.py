@@ -148,3 +148,37 @@ def test_search_hit_missing_from_live_board_is_closed():
                       live_boards={"lever:Qover"}, live_urls={"https://jobs.lever.co/qover/abc"})
     assert [c.url for c in r.queue] == ["https://jobs.lever.co/Qover/abc"]
     assert r.coverage["stats"]["closed"] == 1
+
+
+# --- facts from the official source fill gaps in the extracted posting ---
+
+def test_import_fills_date_and_remote_from_live_candidate(tmp_path):
+    from conftest import make_job
+    from job_analyzer import cli, jobs
+    from job_analyzer.search import write_run_files
+    url = "https://jobs.lever.co/Acme/1"
+    hit = SearchResult(url=url, title="SRE", company="Acme", site="jobs.lever.co", snippet=None,
+                       posted_date="2026-11-10", location="Remote - Europe")
+    write_run_files(merge_batches([SearchBatch(site_group="Live sources", queries=[], errors=[], results=[hit])],
+                                  set()), target=1)
+    f = tmp_path / "job.json"
+    f.write_text(make_job(posted_date=None, remote_policy="unknown").model_dump_json())
+    assert cli.do_import("job", f, url=url, site="jobs.lever.co") == 0
+    rec = jobs.load_record(jobs.url_id(url))
+    assert rec.job.posted_date == "2026-11-10" and rec.job.remote_policy == "remote"
+
+
+def test_import_never_overrides_what_the_posting_says(tmp_path):
+    from conftest import make_job
+    from job_analyzer import cli, jobs
+    from job_analyzer.search import write_run_files
+    url = "https://jobs.lever.co/Acme/2"
+    hit = SearchResult(url=url, title="SRE", company="Acme", site="jobs.lever.co", snippet=None,
+                       posted_date="2026-11-10", location="Remote")
+    write_run_files(merge_batches([SearchBatch(site_group="A", queries=[], errors=[], results=[hit])], set()),
+                    target=1)
+    f = tmp_path / "job.json"
+    f.write_text(make_job(posted_date="2026-11-01", remote_policy="hybrid").model_dump_json())
+    cli.do_import("job", f, url=url)
+    rec = jobs.load_record(jobs.url_id(url))
+    assert rec.job.posted_date == "2026-11-01" and rec.job.remote_policy == "hybrid"
