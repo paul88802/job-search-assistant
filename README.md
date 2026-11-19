@@ -40,7 +40,10 @@ everything Claude writes is validated by `job-analyzer import <kind> <file>` bef
   ├─ job-analyzer brief            candidate brief built by code from your profile + CV
   ├─ job-searcher × N  (parallel)  one per site group · web search + list pages on YOUR job sites only
   │     └─ writes a validated SearchBatch: results (with location + date) + structured errors
-  ├─ job-analyzer merge            code: filter region/age, dedupe, split readable vs. check-yourself
+  ├─ job-analyzer live             code: open jobs from official APIs/feeds (company boards found
+  │                                in the search results + Remote OK + We Work Remotely), full text saved
+  ├─ job-analyzer merge            code: drop closed links, filter region/age, dedupe,
+  │                                split readable vs. check-yourself
   ├─ loop (max 3 waves):
   │    job-analyzer next           code: next candidates; failed postings are replaced (backfill)
   │    posting-analyst × N (parallel) one per posting · gets the brief in its prompt · writes a status file
@@ -48,6 +51,14 @@ everything Claude writes is validated by `job-analyzer import <kind> <file>` bef
                                    + "check these yourself" links + coverage gaps
 ```
 
+- **Live sources over search results.** Search engines keep job pages indexed long after a job is
+  filled, and many job sites block automated reading. So `job-analyzer live` (plain code) reads
+  sources published for automated use: the public job APIs of company boards (Greenhouse, Lever,
+  Ashby), the [Remote OK](https://remoteok.com) API and We Work Remotely RSS feeds. Company boards
+  are **discovered** from search hits (a hit on `jobs.lever.co/acme/...` means Acme's current
+  openings can be fetched) and remembered in your profile. A search hit that its live board no
+  longer lists is dropped as **closed**, and each live job's full text is saved, so analysts read
+  a file instead of fetching a page.
 - **Subagents start with no context.** The coordinator passes the candidate brief explicitly.
 - **Each agent gets only the tools its role needs**, and a guard hook enforces it. Agents that read
   web content run with a PreToolUse hook
@@ -55,9 +66,10 @@ everything Claude writes is validated by `job-analyzer import <kind> <file>` bef
   to `job-analyzer spec|import`, file writes to `data/inbox/`, and searchers may only open pages on
   the job sites in your profile. A prompt injection hidden in a job posting can't run commands or
   touch your CV. The prompt *asks* the agents to ignore injected instructions; the hook *guarantees* it.
-- **Don't spend effort on postings that can't be read.** Sites that block automated reading
-  (LinkedIn, We Work Remotely) aren't sent to analysts. Their postings appear as **"Check these
-  yourself"** links (paste one into `/analyze-job` for a fit score).
+- **Don't spend effort on postings that can't be read.** Postings only found on sites that block
+  automated reading (LinkedIn, We Work Remotely pages), with no saved text from a feed, aren't sent
+  to analysts. They appear as **"Check these yourself"** links (paste one into `/analyze-job` for a
+  fit score).
 - **Backfill:** when a posting fails (closed, blocked), the next one in the queue is analyzed, until
   the target number succeeded or 3× the target was tried. The progress is tracked by code from
   each analyst's status file, not by the coordinator's memory.
@@ -147,6 +159,7 @@ src/job_analyzer/
   specs.py      # Shared rules + schemas for both modes (`spec` / `import` commands)
   jobs.py       # Saved postings: one record per link, with source + date
   search.py     # Search-batch format + merge/dedupe (no AI)
+  live.py       # Live sources: company job-board APIs, Remote OK API, WWR feeds (no AI)
   brief.py      # Candidate brief handed to subagents
   ranking.py    # Shortlist ranking + coverage report (no AI)
   commands/     # The work behind each CLI command (cli.py only parses arguments)
@@ -174,6 +187,8 @@ data/           # Your CV and applications (git-ignored)
 | CV extraction cached by CV file hash **and** rules version (prompt + schema) | Same CV and same rules → no new API call; changing either re-reads the CV, so results are never stale |
 | Required languages stored as "any of" groups | Expresses "English + French **or** Dutch", common in multilingual countries; "nice to have" languages never exclude a job |
 | Data folder found from the project, not the current directory | Works from any folder; override with the `JOB_ANALYZER_DATA` environment variable |
+| Job listings from official APIs and feeds, not search-engine results | Search engines list jobs long after they close; official sources list what is open now, with full text, and are meant for automated use |
+| Company boards discovered from search hits | Even a stale search hit reveals which job board a company uses, so all its current openings can be fetched |
 | The page is built by code with every value HTML-escaped | Model or CV text can't inject markup or scripts into the page |
 | One spec (rules + schema) shared by API mode and Claude Code mode | The two modes can't drift apart |
 | Claude Code output validated by code, with field-level errors fed back for a retry | Without the API's structured outputs nothing guarantees valid JSON, so code checks it and Claude fixes what's listed |

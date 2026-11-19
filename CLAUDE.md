@@ -33,9 +33,13 @@ On Windows, call the venv executables directly (no activation needed):
     older than 90 days; saves them via `import country-boards`
   - `.claude/agents/job-searcher`: one per site group; writes a `SearchBatch`
   - `.claude/agents/posting-analyst`: one per posting; imports the job and a fit judgement
-- Code does the deterministic steps: `merge` (region/age filters, dedupe by company + title + date
-  posted, readable queue vs. check-yourself list), `next` (backfill from analyst status files,
-  max 3× target attempts) and `shortlist` (must-haves → preferences → fit).
+- Code does the deterministic steps: `live` (open jobs from Greenhouse/Lever/Ashby public APIs,
+  the Remote OK API and WWR RSS; boards discovered from search hits into `watch_boards`; full text
+  saved to `data/inbox/live/`), `merge` (drop search hits their live board no longer lists, region/age
+  filters, dedupe by company + title + date posted, readable queue vs. check-yourself list), `next`
+  (backfill from analyst status files, max 3× target attempts) and `shortlist`.
+- Prefer official APIs/feeds over scraping pages. Lever/Ashby board tokens are case-sensitive:
+  keep their original case, compare with `.casefold()`.
 - Sites that block reading are listed in `search.HARD_TO_READ`; add new ones there when a real run
   shows 403/429 responses.
 - Subagents inherit no context: everything goes in their prompt (`job-analyzer brief`).
