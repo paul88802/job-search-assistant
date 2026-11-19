@@ -18,7 +18,7 @@ from job_analyzer import paths
 from job_analyzer.jobs import JobRecord
 from job_analyzer.matching import MatchReport, evaluate
 from job_analyzer.profile import Profile
-from job_analyzer.search import load_candidates
+from job_analyzer.search import load_candidates, load_manual_check, load_statuses
 
 FIT_WEIGHT = 0.6
 
@@ -108,26 +108,51 @@ def render_markdown(included: list[Ranked], excluded: list[Ranked], top: int) ->
             out.append(f"- {j.title} @ {j.company or '?'}{link}: {'; '.join(r.report.exclusion_reasons)}")
         out.append("")
 
+    out += _manual_section()
     out += _coverage_section()
     return "\n".join(out)
+
+
+def _manual_section() -> list[str]:
+    """Postings only found on sites that block automated reading (e.g. LinkedIn)."""
+    manual = load_manual_check()
+    if not manual:
+        return []
+    lines = ["## Check these yourself (site blocks automated reading)", "",
+             "Open the link; paste the text into /analyze-job to get a fit score.", ""]
+    for c in manual:
+        meta = ", ".join(x for x in (c.location, f"posted {c.posted_date}" if c.posted_date else None) if x)
+        lines.append(f"- {c.title} @ {c.company or '?'}" + (f" ({meta})" if meta else "") + f": {c.url}")
+    lines.append("")
+    return lines
+
+
+def _analysis_errors() -> list[dict]:
+    errors = [{**s, "url": s.get("url", job_id)} for job_id, s in load_statuses().items()
+              if s.get("status") == "error"]
+    legacy = _read_json(paths.analysis_errors_file()) or []  # written by older coordinator versions
+    return errors + [e for e in legacy if isinstance(e, dict)]
 
 
 def _coverage_section() -> list[str]:
     """Report what could NOT be searched or read, so gaps are visible instead of silently missing."""
     coverage = _read_json(paths.coverage_file()) or {}
-    analysis_errors = _read_json(paths.analysis_errors_file()) or []
     lines = ["## Coverage", ""]
     for group, s in (coverage.get("groups") or {}).items():
         status = "searched" if not s["errors"] else f"{s['errors']} failed search(es)"
         lines.append(f"- {group}: {s['results']} result(s), {s['queries']} quer(ies), {status}")
     stats = coverage.get("stats")
     if stats:
-        lines.append(f"- {stats['found']} found, {stats['duplicates']} duplicates, "
-                     f"{stats['already_analyzed']} already analyzed earlier, {stats['picked']} analyzed now")
+        lines.append(
+            f"- {stats.get('found', 0)} found · {stats.get('duplicates', 0)} duplicates · "
+            f"{stats.get('already_analyzed', 0)} analyzed in earlier runs · "
+            f"{stats.get('other_location', 0)} other location · {stats.get('too_old', 0)} too old · "
+            f"{stats.get('readable', stats.get('picked', 0))} readable · "
+            f"{stats.get('manual_check', 0)} to check yourself")
     for e in coverage.get("errors", []):
         retry = "temporary" if e.get("retryable") else "not retryable"
         lines.append(f"- ⚠ Search failed on {e['site']} ({e['error_type']}, {retry}): {e['detail']}")
-    for e in analysis_errors:
+    for e in _analysis_errors():
         lines.append(f"- ⚠ Couldn't analyze {e.get('url', '?')} ({e.get('error_type', 'error')}): {e.get('detail', '')}")
     if len(lines) == 2:
         lines.append("- No coverage data (run /find-jobs to search).")

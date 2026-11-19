@@ -56,8 +56,18 @@ def coverage_file() -> Path:
 
 
 def analysis_errors_file() -> Path:
-    """Postings that could not be read or analyzed in the latest run."""
+    """Legacy: errors written by the coordinator (now read from status files instead)."""
     return inbox_dir() / "analysis_errors.json"
+
+
+def analysis_dir() -> Path:
+    """Working files of the posting analysts, including one `<id>-status.json` per posting."""
+    return inbox_dir() / "analysis"
+
+
+def manual_check_file() -> Path:
+    """Postings only found on hard-to-read sites (e.g. LinkedIn): the user checks these."""
+    return inbox_dir() / "manual_check.json"
 
 
 def shortlists_dir() -> Path:

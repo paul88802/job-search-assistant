@@ -33,11 +33,15 @@ On Windows, call the venv executables directly (no activation needed):
     older than 90 days; saves them via `import country-boards`
   - `.claude/agents/job-searcher`: one per site group; writes a `SearchBatch`
   - `.claude/agents/posting-analyst`: one per posting; imports the job and a fit judgement
-- Code does the deterministic steps: `merge` (dedupe by company + title + date posted, prefer the
-  readable copy, keep "also on" links) and `shortlist` (must-haves → preferences → fit).
+- Code does the deterministic steps: `merge` (region/age filters, dedupe by company + title + date
+  posted, readable queue vs. check-yourself list), `next` (backfill from analyst status files,
+  max 3× target attempts) and `shortlist` (must-haves → preferences → fit).
+- Sites that block reading are listed in `search.HARD_TO_READ`; add new ones there when a real run
+  shows 403/429 responses.
 - Subagents inherit no context: everything goes in their prompt (`job-analyzer brief`).
 - **Security:** every subagent has a PreToolUse hook (`.claude/hooks/guard_subagent.py`) that only
-  allows `job-analyzer spec|import` in Bash and writes inside `data/inbox/`. Keep the hook in
+  allows `job-analyzer spec|import` in Bash and writes inside `data/inbox/`; with
+  `--fetch-only-profile-domains` (job-searcher) WebFetch is limited to the profile's job sites. Keep the hook in
   every new agent that reads untrusted web content. Changes to it need tests in `tests/test_guard.py`.
 
 ## Code layout

@@ -40,30 +40,33 @@ If a searcher ends without writing its file, write a `SearchBatch` for that grou
 the failure in `errors`. Never drop a failed group silently.
 
 ## 5. Merge (code)
-Run `job-analyzer merge <every output file>`. It validates the files and removes duplicates: the
-same company + job title + date posted (a missing date counts as the same job). When a job appears
-on several sites, it keeps the copy that can be read automatically and lists the others (e.g.
-LinkedIn) as "also on". It also skips postings analyzed in earlier runs and picks up to
-`max_postings` candidates round-robin across groups. If a file is `INVALID`, send the listed errors
-back to that searcher once.
+Run `job-analyzer merge <every output file>`. Code validates the files and builds the run:
+- drops postings in other regions and postings older than 60 days
+- removes duplicates (same company + job title + date posted; a missing date counts as the same
+  job) and postings analyzed in earlier runs, keeping the readable copy and "also on" links
+- puts **readable** postings in an analysis queue (round-robin across groups)
+- puts postings that exist only on sites that block reading (LinkedIn, We Work Remotely, ...) on a
+  **check-yourself list**; they are never sent to analysts
+If a file is `INVALID`, send the listed errors back to that searcher once.
 
-## 6. Analyze in parallel
-Launch one **posting-analyst** per candidate, all **in one message** (in waves of at most 10).
-Each prompt must contain:
-- the full output of `job-analyzer brief`, verbatim
-- the candidate's url, site, title and company
-- the file prefix `data/inbox/analysis/<candidate id>`
+## 6. Analyze in waves (backfill)
+Repeat, at most 3 times:
+1. Run `job-analyzer next`. It returns JSON with `done` and `candidates`. Code decides how many
+   are still needed: failed postings are replaced by the next ones in the queue.
+2. If `done` is true, stop.
+3. Launch one **posting-analyst** per candidate, all **in one message**. Each prompt must contain:
+   - the full output of `job-analyzer brief`, verbatim
+   - the candidate's url, site, title, company and today's date
+   - the file prefix `data/inbox/analysis/<candidate id>`
+4. Wait until every analyst of the wave has replied.
+You don't need to record errors: each analyst writes `<prefix>-status.json`, and code reads them.
 
-## 7. Collect results
-Each analyst replies with one JSON line. Write every `"status": "error"` line, as a JSON list, to
-`data/inbox/analysis_errors.json`, so it shows up as a coverage gap. You may re-delegate a
-`retryable` error once.
-
-## 8. Shortlist (code)
+## 7. Shortlist (code)
 Run `job-analyzer shortlist`. Present to the user:
 - the top postings: title, company, date posted, overall score, link (plus "also on" links such
   as LinkedIn), fit summary, gaps and how to address them
 - the excluded postings with their reason, in one line each
-- the coverage gaps (failed searches, unreadable postings such as LinkedIn login walls)
+- the **check-yourself** list (links only)
+- the coverage gaps (failed searches, unreadable or closed postings)
 
-Finish by offering `/analyze-job` for any posting the user wants to paste by hand.
+Finish by offering `/analyze-job` for any check-yourself posting the user pastes in.

@@ -58,3 +58,41 @@ def test_write_outside_inbox_blocked(tmp_path, path):
 
 def test_other_tools_pass_through(tmp_path):
     assert run_guard("WebFetch", {"url": "https://jobat.be/x"}, tmp_path).returncode == 0
+
+
+# --- WebFetch for job-searcher: only job sites from the user's profile ---
+
+def run_fetch(url, project, flag=True):
+    event = {"hook_event_name": "PreToolUse", "tool_name": "WebFetch",
+             "tool_input": {"url": url}, "cwd": str(project)}
+    env = {"CLAUDE_PROJECT_DIR": str(project), "SYSTEMROOT": r"C:\Windows", "PATH": "",
+           "JOB_ANALYZER_DATA": str(project / "data")}
+    args = [sys.executable, str(GUARD)] + (["--fetch-only-profile-domains"] if flag else [])
+    return subprocess.run(args, input=json.dumps(event), capture_output=True, text=True, env=env)
+
+
+@pytest.fixture
+def project_with_profile(tmp_path):
+    (tmp_path / "data").mkdir(exist_ok=True)  # conftest's autouse fixture may have created it
+    (tmp_path / "data" / "profile.json").write_text(json.dumps({
+        "search_sites": {"Company": ["lever.co"]},
+        "country_job_boards": {"Belgium": {"domains": ["ictjob.be"], "checked_at": "2026-11-19"}},
+    }))
+    return tmp_path
+
+
+@pytest.mark.parametrize("url", ["https://www.ictjob.be/en/it-jobs/devops/brussels",
+                                 "https://jobs.lever.co/acme"])
+def test_fetch_allowed_on_profile_sites(project_with_profile, url):
+    assert run_fetch(url, project_with_profile).returncode == 0
+
+
+@pytest.mark.parametrize("url", ["https://evil.example/steal", "https://ictjob.be.evil.example/x",
+                                 "https://notlever.co/x"])
+def test_fetch_blocked_elsewhere(project_with_profile, url):
+    assert run_fetch(url, project_with_profile).returncode == 2
+
+
+def test_fetch_unrestricted_without_flag(project_with_profile):
+    # posting-analyst reads postings anywhere (company sites redirect to many ATS domains)
+    assert run_fetch("https://careers.anything.example/job/1", project_with_profile, flag=False).returncode == 0

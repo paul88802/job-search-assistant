@@ -11,7 +11,7 @@ from job_analyzer import jobs, paths
 from job_analyzer.brief import candidate_brief, cv_text, load_details
 from job_analyzer.profile import Profile, countries_to_research, load_profile, search_groups
 from job_analyzer.ranking import rank, records_from_latest_run, render_markdown
-from job_analyzer.search import SearchBatch, job_key, merge_batches, write_run_files
+from job_analyzer.search import SearchBatch, job_key, merge_batches, next_batch, write_run_files
 from job_analyzer.specs import validation_errors
 
 
@@ -63,19 +63,26 @@ def do_merge(files: list[Path], limit: int | None) -> int:
         key = job_key(r.job.company, r.job.title)
         if key:
             known_keys.setdefault(key, []).append(r.job.posted_date)
-    picked, coverage = merge_batches(batches, known_ids, limit or profile.max_postings, known_keys)
+    places = [p for place in profile.locations for p in (place.city, place.country) if p]
+    result = merge_batches(batches, known_ids, known_keys, places=places)
+    write_run_files(result, target=limit or profile.max_postings)
 
-    out = paths.inbox_dir() / "candidates.json"
-    write_run_files(picked, coverage, out)
-    s = coverage["stats"]
-    print(f"{s['found']} found, {s['duplicates']} duplicates, {s['already_analyzed']} already analyzed, "
-          f"{s['same_title_other_date']} same title with another date (kept), {s['picked']} picked -> {out}")
-    for e in coverage["errors"]:
+    s = result.coverage["stats"]
+    print(f"{s['found']} found · {s['duplicates']} duplicates · {s['already_analyzed']} already analyzed · "
+          f"{s['other_location']} other location · {s['too_old']} too old · "
+          f"{s['readable']} readable (queue) · {s['manual_check']} to check yourself")
+    for e in result.coverage["errors"]:
         print(f"  search failed on {e['site']}: {e['error_type']} ({'retryable' if e['retryable'] else 'final'})")
-    for c in picked:
-        posted = f" posted {c.posted_date}" if c.posted_date else ""
-        also = f" (also on {len(c.also_seen_at)} other link(s))" if c.also_seen_at else ""
-        print(f"  [{c.id}] {c.title} @ {c.company or '?'} ({c.site}{posted}){also} {c.url}")
+    print("Next: run `job-analyzer next` to get the first wave of candidates.")
+    return 0
+
+
+def do_next(wave: int) -> int:
+    """Print the next candidates to analyze (JSON), replacing failed ones (backfill)."""
+    run_started = json.loads(paths.run_file().read_text(encoding="utf-8"))["started_at"]
+    succeeded = {r.id for r in jobs.all_records() if r.fit and r.retrieved_at >= run_started}
+    batch, info = next_batch(succeeded, wave)
+    print(json.dumps({**info, "candidates": [c.model_dump() for c in batch]}, indent=2, ensure_ascii=False))
     return 0
 
 

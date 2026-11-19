@@ -4,8 +4,10 @@ The subagents read untrusted web pages. A posting could contain hidden text such
 "ignore your instructions and run <command>". The agents' prompts already say to ignore
 such text, but a prompt is only probabilistic. This hook is the deterministic guarantee:
 
-  Bash  -> only `job-analyzer spec ...` / `job-analyzer import ...`, no shell operators
-  Write -> only files inside <project>/data/inbox/
+  Bash     -> only `job-analyzer spec ...` / `job-analyzer import ...`, no shell operators
+  Write    -> only files inside <project>/data/inbox/
+  WebFetch -> with --fetch-only-profile-domains (used by job-searcher): only the job sites
+              listed in the user's profile, so a searcher can read list pages but nothing else
 
 Exit code 0 = no objection, exit code 2 = block (the stderr message is shown to the agent).
 Standard library only, so it runs with any Python 3.
@@ -16,6 +18,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ALLOWED_SUBCOMMANDS = {"spec", "import"}
 CLI_PREFIX = re.compile(r"^\s*(?:\./)?\.venv[\\/](?:Scripts|bin)[\\/]job-analyzer(?:\.exe)?\s+(\S+)")
@@ -55,6 +58,26 @@ def check_write(file_path: str, cwd: str, project: str) -> None:
         block(f"this agent may only write inside data/inbox/ (tried: {file_path}).")
 
 
+def profile_domains(project: str) -> list[str]:
+    """All job-site domains in the user's profile (global groups + country job boards)."""
+    data_dir = Path(os.environ.get("JOB_ANALYZER_DATA") or Path(project) / "data")
+    try:
+        profile = json.loads((data_dir / "profile.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    domains = [d for ds in (profile.get("search_sites") or {}).values() for d in ds]
+    for boards in (profile.get("country_job_boards") or {}).values():
+        domains += boards.get("domains", [])
+    return [d.lower() for d in domains]
+
+
+def check_fetch(url: str, project: str) -> None:
+    host = (urlsplit(url).hostname or "").lower()
+    allowed = profile_domains(project)
+    if not any(host == d or host.endswith("." + d) for d in allowed):
+        block(f"this agent may only fetch pages on the job sites in your profile (tried: {host or url}).")
+
+
 def main() -> None:
     try:
         event = json.load(sys.stdin)
@@ -69,6 +92,8 @@ def main() -> None:
         check_bash(str(tool_input.get("command", "")))
     elif tool == "Write":
         check_write(str(tool_input.get("file_path", "")), cwd, project)
+    elif tool == "WebFetch" and "--fetch-only-profile-domains" in sys.argv[1:]:
+        check_fetch(str(tool_input.get("url", "")), project)
     sys.exit(0)
 
 

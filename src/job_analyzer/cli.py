@@ -9,7 +9,8 @@ Claude Code mode (no API key; used by the skills and agents in .claude/):
   job-analyzer import <kind> <file>  validate JSON written by Claude Code and store it
   job-analyzer plan                  search groups + countries whose job boards need research
   job-analyzer brief                 candidate brief to hand to subagents
-  job-analyzer merge <files...>      validate + merge search results, drop duplicates
+  job-analyzer merge <files...>      validate + merge search results into an analysis queue
+  job-analyzer next                  next candidates to analyze (replaces failed ones)
   job-analyzer shortlist             rank the latest run's postings
 """
 
@@ -23,11 +24,11 @@ import anthropic
 from job_analyzer.commands.api_mode import do_analyze, do_setup
 from job_analyzer.commands.copy_kit import do_copy_kit
 from job_analyzer.commands.importing import do_import
-from job_analyzer.commands.search_run import do_brief, do_merge, do_plan, do_shortlist
+from job_analyzer.commands.search_run import do_brief, do_merge, do_next, do_plan, do_shortlist
 from job_analyzer.llm import ExtractionError
 from job_analyzer.specs import SPECS, spec_text
 
-__all__ = ["do_analyze", "do_brief", "do_copy_kit", "do_import", "do_merge", "do_plan",
+__all__ = ["do_analyze", "do_brief", "do_copy_kit", "do_import", "do_merge", "do_next", "do_plan",
            "do_setup", "do_shortlist", "main", "run_safely"]
 
 
@@ -99,10 +100,14 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("plan", help="Print the search plan inputs for /find-jobs (JSON)").set_defaults(
         run=lambda a: do_plan())
 
-    p = sub.add_parser("merge", help="Validate + merge search batches, drop duplicates, pick candidates")
+    p = sub.add_parser("merge", help="Validate + merge search batches into an analysis queue")
     p.add_argument("files", type=Path, nargs="+")
-    p.add_argument("--limit", type=int, help="Max candidates (default: profile max_postings)")
+    p.add_argument("--limit", type=int, help="Postings to analyze successfully (default: profile max_postings)")
     p.set_defaults(run=lambda a: do_merge(a.files, a.limit))
+
+    p = sub.add_parser("next", help="Next candidates to analyze, replacing failed ones (JSON)")
+    p.add_argument("--wave", type=int, default=10, help="Max candidates per wave")
+    p.set_defaults(run=lambda a: do_next(a.wave))
 
     p = sub.add_parser("shortlist", help="Rank the analyzed postings of the latest run")
     p.add_argument("--top", type=int, default=10)

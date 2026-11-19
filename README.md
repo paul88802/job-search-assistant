@@ -38,23 +38,31 @@ everything Claude writes is validated by `job-analyzer import <kind> <file>` bef
   ├─ job-analyzer plan             site groups; countries whose job boards need (re)research
   ├─ job-board-scout × N (if needed) finds a country's top job boards, saves them with a date
   ├─ job-analyzer brief            candidate brief built by code from your profile + CV
-  ├─ job-searcher × N  (parallel)  one per site group · tools: WebSearch only · cheap model
-  │     └─ writes a validated SearchBatch: results + structured errors
-  ├─ job-analyzer merge            code: validate, remove duplicates and known jobs, pick round-robin
-  ├─ posting-analyst × N (parallel) one per posting · tools: WebFetch only · gets the brief in its prompt
-  │     └─ extracts the posting (link + date kept) and judges fit with evidence
-  └─ job-analyzer shortlist        code: must-haves → preferences → fit → ranked list + coverage gaps
+  ├─ job-searcher × N  (parallel)  one per site group · web search + list pages on YOUR job sites only
+  │     └─ writes a validated SearchBatch: results (with location + date) + structured errors
+  ├─ job-analyzer merge            code: filter region/age, dedupe, split readable vs. check-yourself
+  ├─ loop (max 3 waves):
+  │    job-analyzer next           code: next candidates; failed postings are replaced (backfill)
+  │    posting-analyst × N (parallel) one per posting · gets the brief in its prompt · writes a status file
+  └─ job-analyzer shortlist        code: must-haves → preferences → fit → ranked list,
+                                   + "check these yourself" links + coverage gaps
 ```
 
 - **Subagents start with no context.** The coordinator passes the candidate brief explicitly.
-- **Each agent gets only the tools its role needs:** searchers can't read pages, analysts can't search.
-- **A guard hook enforces it.** Agents that read web content run with a PreToolUse hook
-  ([`.claude/hooks/guard_subagent.py`](.claude/hooks/guard_subagent.py)): their shell access is
-  limited to `job-analyzer spec|import` and file writes to `data/inbox/`. A prompt injection
-  hidden in a job posting can't run commands or touch your CV. The prompt *asks* the agents to
-  ignore injected instructions; the hook *guarantees* it.
-- **Failures are reported, never hidden.** A failed search or an unreadable posting (e.g. a login wall)
-  appears under *Coverage* in the shortlist. A search that simply found nothing is not an error.
+- **Each agent gets only the tools its role needs**, and a guard hook enforces it. Agents that read
+  web content run with a PreToolUse hook
+  ([`.claude/hooks/guard_subagent.py`](.claude/hooks/guard_subagent.py)): shell access is limited
+  to `job-analyzer spec|import`, file writes to `data/inbox/`, and searchers may only open pages on
+  the job sites in your profile. A prompt injection hidden in a job posting can't run commands or
+  touch your CV. The prompt *asks* the agents to ignore injected instructions; the hook *guarantees* it.
+- **Don't spend effort on postings that can't be read.** Sites that block automated reading
+  (LinkedIn, We Work Remotely) aren't sent to analysts. Their postings appear as **"Check these
+  yourself"** links (paste one into `/analyze-job` for a fit score).
+- **Backfill:** when a posting fails (closed, blocked), the next one in the queue is analyzed, until
+  the target number succeeded or 3× the target was tried. The progress is tracked by code from
+  each analyst's status file, not by the coordinator's memory.
+- **Failures are reported, never hidden.** Failed searches and unreadable or closed postings appear
+  under *Coverage*. A search that simply found nothing is not an error.
 - **Code does the deterministic parts** (dedupe, must-haves, ranking); Claude does the judgement (fit).
 - **Duplicates = same company + job title + date posted** (ignoring "(m/f/x)" tags and "NV/SA/Ltd").
   When a job appears on several sites, the copy that can be read automatically is analyzed and the

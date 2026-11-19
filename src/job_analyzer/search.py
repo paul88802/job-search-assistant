@@ -15,7 +15,8 @@ and the other links are kept as "also on" (e.g. LinkedIn, for Easy Apply).
 
 import json
 import re
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from itertools import zip_longest
 from pathlib import Path
 from typing import Literal
@@ -23,13 +24,16 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from job_analyzer import paths
+from urllib.parse import urlsplit
+
 from job_analyzer.jobs import normalize_url, url_id
 
 ErrorType = Literal["access_failure", "blocked", "rate_limited", "other"]
 
-# Sites that usually block automated reading (login walls). Used only to choose
-# which copy of a duplicated posting to analyze.
-HARD_TO_READ = ("linkedin.com", "indeed.", "glassdoor.")
+# Sites that block automated reading (login walls, 403/429 responses), as seen in real runs.
+# Their postings are not sent to analysts: a readable copy is preferred when one exists,
+# otherwise they go to the user's "check these yourself" list with the link.
+HARD_TO_READ = ("linkedin.com", "indeed.", "glassdoor.", "weworkremotely.com")
 
 GENDER_TAGS = re.compile(r"\((?:m|f|h|v|x|d|w)(?:\s*[/|,]\s*(?:m|f|h|v|x|d|w))+\)|\b(?:m|f|h)/(?:f|v|h|m)(?:/(?:x|d))?\b", re.I)
 COMPANY_SUFFIXES = re.compile(r"\b(?:nv|sa|bv|bvba|srl|sprl|ltd|limited|inc|llc|gmbh|ag|plc|group)\b\.?", re.I)
@@ -43,6 +47,10 @@ class SearchResult(BaseModel):
     posted_date: str | None = Field(
         default=None,
         description="Date the job was posted as YYYY-MM-DD if shown ('3 days ago' -> compute from today), else null.",
+    )
+    location: str | None = Field(
+        default=None,
+        description="Job location as shown, in English (e.g. 'Brussels, Belgium', 'Remote - Europe', 'Remote - US'), else null.",
     )
     snippet: str | None = Field(description="Short text from the search result, or null.")
 
@@ -95,8 +103,55 @@ def same_date(a: str | None, b: str | None) -> bool:
     return a is None or b is None or a == b
 
 
-def readability(site: str) -> int:
-    return 0 if any(h in site.casefold() for h in HARD_TO_READ) else 1
+def readability(r: SearchResult) -> int:
+    """0 if the posting lives on a site that blocks automated reading, else 1.
+
+    Checks the link's real host too, not only the `site` label the searcher wrote.
+    """
+    host = (urlsplit(r.url).hostname or "").casefold()
+    return 0 if any(h in host or h in r.site.casefold() for h in HARD_TO_READ) else 1
+
+
+# ---- filters (plain code, applied before any posting is analyzed) ----
+
+REMOTE_OK = re.compile(r"\b(?:remote|europe|european|emea|eu|worldwide|anywhere|global)\b", re.I)
+REGION_LOCKED = re.compile(
+    r"\b(?:us|usa|u\.s\.|united states|canada|north america|americas|latam|latin america|"
+    r"apac|asia|australia|india|uk only|us only)\b", re.I)
+
+
+def location_ok(location: str | None, places: list[str]) -> bool:
+    """Keep a result unless its location clearly rules the user out.
+
+    Unknown location -> keep (code can't tell; the analyst will read the posting).
+    Mentions one of the user's countries/cities -> keep.
+    Locked to another region ("Remote - US") -> drop.
+    Remote/Europe/EMEA/worldwide -> keep. Any other specific place -> drop.
+    """
+    if not location or not places:
+        return True
+    loc = location.casefold()
+    if any(p in loc for p in places):
+        return True
+    if REGION_LOCKED.search(loc):
+        return False
+    return bool(REMOTE_OK.search(loc))
+
+
+def too_old(posted_date: str | None, today: date, max_age_days: int) -> bool:
+    if not posted_date:
+        return False
+    try:
+        return (today - date.fromisoformat(posted_date)).days > max_age_days
+    except ValueError:
+        return False
+
+
+@dataclass
+class MergeResult:
+    queue: list[Candidate]   # readable postings, in analysis order (round-robin across groups)
+    manual: list[Candidate]  # postings only found on hard-to-read sites: the user checks these
+    coverage: dict
 
 
 # ---- merging ----
@@ -104,19 +159,26 @@ def readability(site: str) -> int:
 def merge_batches(
     batches: list[SearchBatch],
     known_ids: set[str],
-    limit: int,
     known_keys: dict[tuple[str, str], list[str | None]] | None = None,
-) -> tuple[list[Candidate], dict]:
-    """Remove duplicates and already-analyzed postings, then pick up to `limit` candidates.
+    *,
+    places: list[str] | None = None,
+    today: date | None = None,
+    max_age_days: int = 60,
+) -> MergeResult:
+    """Filter, dedupe and order everything the searchers found.
 
-    Candidates are taken round-robin across site groups, so one big site can't crowd out
-    the others (coverage matters more than volume).
+    Nothing is analyzed here. The result is a QUEUE of readable postings: the coordinator
+    takes candidates from it wave by wave (`job-analyzer next`) until enough postings have
+    been analyzed successfully, so a failed posting is replaced by the next one (backfill).
     """
     known_keys = known_keys or {}
+    places = [p.casefold() for p in (places or [])]
+    today = today or date.today()
     unique: list[Candidate] = []
     by_url: dict[str, int] = {}
     by_key: dict[tuple[str, str], list[int]] = {}
-    stats = {"found": 0, "duplicates": 0, "already_analyzed": 0, "same_title_other_date": 0}
+    stats = {"found": 0, "duplicates": 0, "already_analyzed": 0, "same_title_other_date": 0,
+             "other_location": 0, "too_old": 0}
 
     for batch in batches:
         for r in batch.results:
@@ -124,6 +186,12 @@ def merge_batches(
             url = normalize_url(r.url)
             key = job_key(r.company, r.title)
 
+            if not location_ok(r.location, places):
+                stats["other_location"] += 1
+                continue
+            if too_old(r.posted_date, today, max_age_days):
+                stats["too_old"] += 1
+                continue
             if url_id(r.url) in known_ids or (
                 key and any(same_date(r.posted_date, d) for d in known_keys.get(key, []))
             ):
@@ -139,7 +207,7 @@ def merge_batches(
             if match is not None:
                 stats["duplicates"] += 1
                 keeper = unique[match]
-                if readability(r.site) > readability(keeper.site):
+                if readability(r) > readability(keeper):
                     # Analyze the readable copy; keep the other link (e.g. LinkedIn) as "also on".
                     unique[match] = Candidate(
                         **{**r.model_dump(), "posted_date": r.posted_date or keeper.posted_date},
@@ -159,14 +227,13 @@ def merge_batches(
             if key:
                 by_key.setdefault(key, []).append(len(unique) - 1)
 
+    readable = [c for c in unique if readability(c)]
+    manual = [c for c in unique if not readability(c)]
+
     per_group: dict[str, list[Candidate]] = {b.site_group: [] for b in batches}
-    for c in unique:
+    for c in readable:
         per_group[c.site_group].append(c)
-    picked: list[Candidate] = []
-    for round_ in zip_longest(*per_group.values()):
-        for c in round_:
-            if c is not None and len(picked) < limit:
-                picked.append(c)
+    queue = [c for round_ in zip_longest(*per_group.values()) for c in round_ if c is not None]
 
     coverage = {
         "groups": {
@@ -174,31 +241,94 @@ def merge_batches(
             for b in batches
         },
         "errors": [e.model_dump() for b in batches for e in b.errors],
-        "stats": {**stats, "new_unique": len(unique), "picked": len(picked)},
+        "stats": {**stats, "new_unique": len(unique), "readable": len(queue), "manual_check": len(manual)},
     }
-    return picked, coverage
+    return MergeResult(queue=queue, manual=manual, coverage=coverage)
 
 
-def write_run_files(candidates: list[Candidate], coverage: dict, out: Path) -> None:
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps([c.model_dump() for c in candidates], indent=2, ensure_ascii=False),
-                   encoding="utf-8")
-    paths.coverage_file().write_text(json.dumps(coverage, indent=2, ensure_ascii=False), encoding="utf-8")
+# ---- run files ----
+
+def _dump(items: list[Candidate]) -> str:
+    return json.dumps([c.model_dump() for c in items], indent=2, ensure_ascii=False)
+
+
+def write_run_files(result: MergeResult, target: int) -> None:
+    """Start a new run: queue, check-yourself list, coverage, and a clean analysis folder."""
+    inbox = paths.inbox_dir()
+    inbox.mkdir(parents=True, exist_ok=True)
+    (inbox / "candidates.json").write_text(_dump(result.queue), encoding="utf-8")
+    paths.manual_check_file().write_text(_dump(result.manual), encoding="utf-8")
+    paths.coverage_file().write_text(json.dumps(result.coverage, indent=2, ensure_ascii=False),
+                                     encoding="utf-8")
     paths.run_file().write_text(json.dumps({
         "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "candidates": len(candidates),
+        "target": target,
+        "queue": len(result.queue),
     }, indent=2), encoding="utf-8")
-    errors_file = paths.analysis_errors_file()
-    if errors_file.exists():
-        errors_file.unlink()  # a new run starts with a clean error list
+    analysis = paths.analysis_dir()
+    if analysis.exists():
+        for f in analysis.glob("*"):
+            f.unlink()  # a new run starts with no statuses from the previous one
+    old_errors = paths.analysis_errors_file()
+    if old_errors.exists():
+        old_errors.unlink()
+
+
+def _load_list(path: Path) -> list[Candidate]:
+    if not path.exists():
+        return []
+    try:
+        return [Candidate.model_validate(c) for c in json.loads(path.read_text(encoding="utf-8"))]
+    except ValueError:
+        return []
 
 
 def load_candidates() -> list[Candidate]:
-    """Candidates of the latest run (for 'also on' links in the shortlist)."""
-    f = paths.inbox_dir() / "candidates.json"
-    if not f.exists():
-        return []
-    try:
-        return [Candidate.model_validate(c) for c in json.loads(f.read_text(encoding="utf-8"))]
-    except ValueError:
-        return []
+    """The analysis queue of the latest run."""
+    return _load_list(paths.inbox_dir() / "candidates.json")
+
+
+def load_manual_check() -> list[Candidate]:
+    """Postings of the latest run that only exist on hard-to-read sites."""
+    return _load_list(paths.manual_check_file())
+
+
+# ---- backfill: which candidates to analyze next ----
+
+def load_statuses() -> dict[str, dict]:
+    """Status lines the analysts wrote (`<id>-status.json`), by candidate id."""
+    out: dict[str, dict] = {}
+    folder = paths.analysis_dir()
+    if not folder.exists():
+        return out
+    for f in folder.glob("*-status.json"):
+        try:
+            out[f.name.removesuffix("-status.json")] = json.loads(f.read_text(encoding="utf-8"))
+        except ValueError:
+            out[f.name.removesuffix("-status.json")] = {"status": "error", "error_type": "other",
+                                                        "detail": "unreadable status file"}
+    return out
+
+
+def next_batch(succeeded_ids: set[str], wave: int, attempt_factor: int = 3) -> tuple[list[Candidate], dict]:
+    """The next candidates to analyze, replacing failures until `target` postings succeeded.
+
+    Stops when the target is reached, the queue is empty, or `attempt_factor * target`
+    postings have been tried (so a run can't loop forever on a site that blocks everything).
+    """
+    run = json.loads(paths.run_file().read_text(encoding="utf-8"))
+    target = run["target"]
+    queue = load_candidates()
+    statuses = load_statuses()
+    queued_ids = {c.id for c in queue}
+    succeeded = succeeded_ids & queued_ids
+    attempted = succeeded | set(statuses)
+    need = target - len(succeeded)
+    budget = attempt_factor * target - len(attempted)
+    remaining = [c for c in queue if c.id not in attempted]
+    batch = remaining[: max(0, min(need, wave, budget))]
+    info = {"target": target, "succeeded": len(succeeded),
+            "failed": sum(1 for s in statuses.values() if s.get("status") == "error"),
+            "remaining_in_queue": len(remaining), "next": len(batch),
+            "done": not batch}
+    return batch, info
