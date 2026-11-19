@@ -1,0 +1,26 @@
+Backend Python Developer (Mid-level) - Northwind Analytics
+
+Location: Bucharest, Romania - hybrid (2 days/week in office)
+Salary: 4,500 - 6,000 EUR gross/month
+
+About us
+Northwind Analytics builds forecasting tools for retail chains across Europe.
+
+What you'll do
+- Design and maintain REST APIs in Python (FastAPI)
+- Build data pipelines that process millions of sales records per day
+- Work with product managers to turn requirements into features
+- Review code and mentor junior developers
+
+What we need
+- 3+ years of professional Python experience
+- Solid SQL (PostgreSQL preferred)
+- Experience with Docker and Git
+- Good written English
+
+Nice to have
+- Experience with LLM APIs (Anthropic, OpenAI)
+- AWS or GCP
+- Kubernetes
+
+We are a fast-paced team and expect you to be available on weekends when releases require it.
