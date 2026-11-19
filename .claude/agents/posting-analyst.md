@@ -21,9 +21,17 @@ The CLI is `.venv/Scripts/job-analyzer` on Windows and `.venv/bin/job-analyzer` 
 line to `<prefix>-status.json`. Code reads these files to replace failed postings and to report
 coverage gaps, so a missing status file means a lost result.
 
-1. Fetch the posting URL. If the fetch fails, the page needs a login, it isn't a single job
-   posting, or the job is closed, write the status file and reply with exactly one JSON line:
-   `{"status": "error", "url": "<url>", "error_type": "access_failure" | "login_required" | "not_a_posting" | "closed", "detail": "<one sentence>", "retryable": true | false}`
+1. Get the posting text:
+   - If your task gives a **text file** (`text_file`), Read it. It holds the full posting from the
+     company's official job feed, so don't fetch the page.
+   - Otherwise fetch the posting URL.
+   Stop early, write the status file, and reply with exactly one JSON line if:
+   - the fetch fails, the page needs a login, or it isn't a single job posting
+   - the job is closed
+   - **the posting is a different role than the expected title** (e.g. you expected "Azure Cloud
+     Engineer" but the page is "Senior Node.js Back-End Engineer"). A wrong link must not be
+     analyzed as if it were the right job; use `"mismatch"`, and the next candidate replaces it.
+   `{"status": "error", "url": "<url>", "error_type": "access_failure" | "login_required" | "not_a_posting" | "closed" | "mismatch", "detail": "<one sentence>", "retryable": true | false}`
 
 2. Extract: run `job-analyzer spec job`, follow it, write the JSON to `<prefix>-job.json`, then run
    `job-analyzer import job <prefix>-job.json --url '<url>' --site <site>` (URL in single quotes).

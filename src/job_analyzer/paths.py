@@ -65,6 +65,16 @@ def analysis_dir() -> Path:
     return inbox_dir() / "analysis"
 
 
+def live_dir() -> Path:
+    """Full text of live jobs (`<id>.txt`), so analysts read files instead of fetching pages."""
+    return inbox_dir() / "live"
+
+
+def live_index_file() -> Path:
+    """Which company boards were fetched live, and which job URLs are open on them."""
+    return inbox_dir() / "live_index.json"
+
+
 def manual_check_file() -> Path:
     """Postings only found on hard-to-read sites (e.g. LinkedIn): the user checks these."""
     return inbox_dir() / "manual_check.json"

@@ -68,7 +68,7 @@ def test_merge_removes_duplicates_and_known_jobs():
     picked, coverage = merge(batches, known, limit=10)
     assert [c.url for c in picked] == ["https://a.be/job/2", "https://linkedin.com/jobs/view/10"]
     assert coverage["stats"] == {"found": 5, "duplicates": 2, "already_analyzed": 1,
-                                 "same_title_other_date": 0, "other_location": 0, "too_old": 0,
+                                 "same_title_other_date": 0, "other_location": 0, "too_old": 0, "closed": 0,
                                  "new_unique": 2, "readable": 1, "manual_check": 1}
 
 

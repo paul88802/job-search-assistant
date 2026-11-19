@@ -24,7 +24,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from job_analyzer import paths
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from job_analyzer.jobs import normalize_url, url_id
 
@@ -103,11 +103,36 @@ def same_date(a: str | None, b: str | None) -> bool:
     return a is None or b is None or a == b
 
 
-def readability(r: SearchResult) -> int:
+# Company job boards (ATS) whose public APIs list open jobs; see live.py.
+ATS_HOSTS = {
+    "greenhouse": ("boards.greenhouse.io", "job-boards.greenhouse.io", "job-boards.eu.greenhouse.io"),
+    "lever": ("jobs.lever.co", "jobs.eu.lever.co"),
+    "ashby": ("jobs.ashbyhq.com",),
+}
+
+
+def board_from_url(url: str) -> str | None:
+    """'https://jobs.lever.co/Qover/abc' -> 'lever:Qover' (None if not a known job board).
+
+    The company token keeps its original case: Lever and Ashby APIs are case-sensitive
+    ('qover' returns 404, 'Qover' works). Compare boards with `.casefold()`.
+    """
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    segments = [unquote(s) for s in parts.path.split("/") if s]
+    for ats, hosts in ATS_HOSTS.items():
+        if host in hosts and segments and segments[0].lower() not in ("embed", "v1", "api"):
+            return f"{ats}:{segments[0]}"
+    return None
+
+
+def readability(r: SearchResult, readable_ids: frozenset | set = frozenset()) -> int:
     """0 if the posting lives on a site that blocks automated reading, else 1.
 
     Checks the link's real host too, not only the `site` label the searcher wrote.
     """
+    if url_id(r.url) in readable_ids:
+        return 1  # full text already saved from an official feed
     host = (urlsplit(r.url).hostname or "").casefold()
     return 0 if any(h in host or h in r.site.casefold() for h in HARD_TO_READ) else 1
 
@@ -116,8 +141,13 @@ def readability(r: SearchResult) -> int:
 
 REMOTE_OK = re.compile(r"\b(?:remote|europe|european|emea|eu|worldwide|anywhere|global)\b", re.I)
 REGION_LOCKED = re.compile(
-    r"\b(?:us|usa|u\.s\.|united states|canada|north america|americas|latam|latin america|"
+    r"\b(?:us|usa|u\.s\.|united states|canada|north america|namer|americas|latam|latin america|"
     r"apac|asia|australia|india|uk only|us only)\b", re.I)
+# Words that may accompany "remote" without naming a specific place.
+LOCATION_FILLER = {"remote", "europe", "european", "emea", "eu", "worldwide", "anywhere", "global",
+                   "world", "in", "the", "of", "only", "based", "first", "friendly", "hybrid", "or",
+                   "and", "within", "timezone", "timezones", "time", "zone", "cet", "cest", "utc",
+                   "gmt", "hours", "hour", "fully", "work", "from", "home", "location", "flexible"}
 
 
 def location_ok(location: str | None, places: list[str]) -> bool:
@@ -125,8 +155,10 @@ def location_ok(location: str | None, places: list[str]) -> bool:
 
     Unknown location -> keep (code can't tell; the analyst will read the posting).
     Mentions one of the user's countries/cities -> keep.
-    Locked to another region ("Remote - US") -> drop.
-    Remote/Europe/EMEA/worldwide -> keep. Any other specific place -> drop.
+    Locked to another region ("Remote - US", "NAMER and LatAm") -> drop.
+    Remote/Europe/EMEA/worldwide with nothing more specific -> keep.
+    Remote but tied to another place ("Remote - Spain", "Remote - Ireland") -> drop.
+    Any other specific place -> drop.
     """
     if not location or not places:
         return True
@@ -135,7 +167,10 @@ def location_ok(location: str | None, places: list[str]) -> bool:
         return True
     if REGION_LOCKED.search(loc):
         return False
-    return bool(REMOTE_OK.search(loc))
+    if not REMOTE_OK.search(loc):
+        return False
+    leftover = [w for w in re.findall(r"[a-z]+", loc) if w not in LOCATION_FILLER]
+    return not leftover  # anything left names a specific other place
 
 
 def too_old(posted_date: str | None, today: date, max_age_days: int) -> bool:
@@ -164,27 +199,41 @@ def merge_batches(
     places: list[str] | None = None,
     today: date | None = None,
     max_age_days: int = 60,
+    live_boards: set[str] | None = None,
+    live_urls: set[str] | None = None,
+    readable_ids: set[str] | None = None,
 ) -> MergeResult:
     """Filter, dedupe and order everything the searchers found.
 
     Nothing is analyzed here. The result is a QUEUE of readable postings: the coordinator
     takes candidates from it wave by wave (`job-analyzer next`) until enough postings have
     been analyzed successfully, so a failed posting is replaced by the next one (backfill).
+
+    `live_boards` / `live_urls` come from `job-analyzer live`: a search hit on a company
+    board that was fetched live, but which is NOT among that board's open jobs, is closed.
+    Pass the live batch FIRST so live copies (with saved text) win over search duplicates.
     """
     known_keys = known_keys or {}
     places = [p.casefold() for p in (places or [])]
     today = today or date.today()
+    live_boards = {b.casefold() for b in (live_boards or set())}
+    ids = readable_ids or set()
+    live_urls = {u.casefold() for u in (live_urls or set())}  # job-board paths: case-insensitive
     unique: list[Candidate] = []
     by_url: dict[str, int] = {}
     by_key: dict[tuple[str, str], list[int]] = {}
     stats = {"found": 0, "duplicates": 0, "already_analyzed": 0, "same_title_other_date": 0,
-             "other_location": 0, "too_old": 0}
+             "other_location": 0, "too_old": 0, "closed": 0}
 
     for batch in batches:
         for r in batch.results:
             stats["found"] += 1
             url = normalize_url(r.url)
             key = job_key(r.company, r.title)
+
+            if (board_from_url(r.url) or "").casefold() in live_boards and url.casefold() not in live_urls:
+                stats["closed"] += 1  # its company board is live and no longer lists it
+                continue
 
             if not location_ok(r.location, places):
                 stats["other_location"] += 1
@@ -207,7 +256,7 @@ def merge_batches(
             if match is not None:
                 stats["duplicates"] += 1
                 keeper = unique[match]
-                if readability(r) > readability(keeper):
+                if readability(r, ids) > readability(keeper, ids):
                     # Analyze the readable copy; keep the other link (e.g. LinkedIn) as "also on".
                     unique[match] = Candidate(
                         **{**r.model_dump(), "posted_date": r.posted_date or keeper.posted_date},
@@ -227,8 +276,8 @@ def merge_batches(
             if key:
                 by_key.setdefault(key, []).append(len(unique) - 1)
 
-    readable = [c for c in unique if readability(c)]
-    manual = [c for c in unique if not readability(c)]
+    readable = [c for c in unique if readability(c, ids)]
+    manual = [c for c in unique if not readability(c, ids)]
 
     per_group: dict[str, list[Candidate]] = {b.site_group: [] for b in batches}
     for c in readable:

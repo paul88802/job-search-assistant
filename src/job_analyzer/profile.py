@@ -61,6 +61,11 @@ class Profile(BaseModel):
     country_job_boards: dict[str, CountryBoards] = Field(default_factory=dict)
     max_postings: int = 10  # how many postings one search run analyzes in depth
 
+    # Live sources (fetched by code from official APIs/feeds, see live.py).
+    # Company job boards like "lever:qover"; new ones are discovered from search results.
+    watch_boards: list[str] = Field(default_factory=list)
+    live_feeds: list[str] = Field(default_factory=lambda: ["remoteok", "wwr:remote-devops-sysadmin-jobs"])
+
 
 def search_groups(p: Profile) -> dict[str, list[str]]:
     """All site groups for one run: global groups + one group per researched country."""
