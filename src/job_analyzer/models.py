@@ -80,6 +80,15 @@ class JobRequirements(BaseModel):
     )
     location: Place | None = Field(description="Where the job is based, or null if not stated.")
     remote_policy: RemotePolicy
+    open_to: list[str] = Field(
+        default_factory=list,
+        description=(
+            "For remote jobs: the countries or regions where candidates may live, in English, as "
+            "the posting or its location line states them (e.g. ['United States', 'Canada'], "
+            "['Europe'], ['Worldwide'], ['Argentina', 'Chile']). Cities count as their place "
+            "(['Bogotá'] stays ['Bogotá']). Empty if the posting doesn't restrict it or isn't remote."
+        ),
+    )
     years_experience_min: int | None = Field(
         description="Minimum years of experience required, or null if not stated."
     )

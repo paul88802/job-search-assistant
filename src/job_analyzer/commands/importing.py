@@ -5,6 +5,7 @@ uses, and stores it in the same place. Invalid JSON is rejected with a list of t
 exact fields to fix, which the agent uses for a retry.
 """
 
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -92,6 +93,19 @@ def fill_from_source(job, url: str) -> None:
             job.remote_policy = "hybrid"
         elif "remote" in loc or "anywhere" in loc or "worldwide" in loc:
             job.remote_policy = "remote"
+    if job.remote_policy == "remote" and not job.open_to and cand.location:
+        job.open_to = official_places(cand.location)
+
+
+def official_places(location: str) -> list[str]:
+    """'Remote - United States; Canada' -> ['United States', 'Canada']; plain 'Remote' -> []."""
+    places = []
+    for part in location.split(";"):
+        part = re.sub(r"\((?:remote|hybrid|onsite|on-site)\)", "", part, flags=re.I)
+        part = re.sub(r"^\s*remote\s*[-–:,]?\s*", "", part, flags=re.I).strip(" -–,")
+        if part and part.casefold() not in {"remote", "anywhere", "worldwide", "anywhere in the world"}:
+            places.append(part)
+    return places
 
 
 def _clean_domain(raw: str) -> str:

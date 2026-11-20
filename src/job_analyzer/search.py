@@ -156,6 +156,9 @@ LOCATION_FILLER = {"remote", "europe", "european", "emea", "eu", "worldwide", "a
 def location_ok(location: str | None, places: list[str]) -> bool:
     """Keep a result unless its location clearly rules the user out.
 
+    Several places separated by ';' (a job open in more than one location): keep it if ANY
+    of them works for the user.
+
     Unknown location -> keep (code can't tell; the analyst will read the posting).
     Mentions one of the user's countries/cities -> keep.
     Locked to another region ("Remote - US", "NAMER and LatAm") -> drop.
@@ -165,6 +168,9 @@ def location_ok(location: str | None, places: list[str]) -> bool:
     """
     if not location or not places:
         return True
+    parts = [p for p in location.split(";") if p.strip()]
+    if len(parts) > 1:
+        return any(location_ok(p, places) for p in parts)
     loc = location.casefold()
     if any(p in loc for p in places):
         return True
@@ -174,6 +180,38 @@ def location_ok(location: str | None, places: list[str]) -> bool:
         return False
     leftover = [w for w in re.findall(r"[a-z]+", loc) if w not in LOCATION_FILLER]
     return not leftover  # anything left names a specific other place
+
+
+def open_to_ok(open_to: list[str], places: list[str]) -> bool:
+    """Can someone living in `places` take a remote job open to `open_to` (countries/regions)?
+
+    True if any entry names one of the user's places or an open region (Europe, EMEA,
+    worldwide...). Only when EVERY entry names somewhere else is the job out of reach.
+    """
+    if not open_to or not places:
+        return True
+    places = [p.casefold() for p in places]
+    for entry in open_to:
+        e = entry.casefold()
+        if any(p in e for p in places) or (REMOTE_OK.search(e) and not REGION_LOCKED.search(e)):
+            return True
+        if re.search(r"\b(?:cet|cest|gmt|utc)\b", e):  # a time zone, not a place: can't tell
+            return True
+    return False
+
+
+# LinkedIn numbers its jobs in order. IDs below this were created before ~spring 2025
+# (current IDs in late 2026 are ~4.4-4.5 billion). Search engines keep years-old LinkedIn
+# pages indexed and LinkedIn can't be read automatically, so the ID is the only date signal.
+LINKEDIN_STALE_BELOW = 4_200_000_000
+
+
+def linkedin_stale(url: str) -> bool:
+    """True for a LinkedIn job link whose ID shows it was posted long ago."""
+    if "linkedin.com" not in urlsplit(url).netloc.casefold():
+        return False
+    m = re.search(r"(?:/jobs/view/(?:[^/?]*-)?|currentJobId=)(\d{9,11})", url)
+    return bool(m) and int(m.group(1)) < LINKEDIN_STALE_BELOW
 
 
 def too_old(posted_date: str | None, today: date, max_age_days: int) -> bool:
@@ -203,7 +241,7 @@ def merge_batches(
     today: date | None = None,
     max_age_days: int = 60,
     live_boards: set[str] | None = None,
-    live_urls: set[str] | None = None,
+    live_urls: dict[str, dict] | set[str] | None = None,
     readable_ids: set[str] | None = None,
 ) -> MergeResult:
     """Filter, dedupe and order everything the searchers found.
@@ -214,6 +252,8 @@ def merge_batches(
 
     `live_boards` / `live_urls` come from `job-analyzer live`: a search hit on a company
     board that was fetched live, but which is NOT among that board's open jobs, is closed.
+    A hit that IS among them takes the board's official location and date, so the location
+    and age filters judge it on the company's data, not on what a search snippet showed.
     Pass the live batch FIRST so live copies (with saved text) win over search duplicates.
     """
     known_keys = known_keys or {}
@@ -221,7 +261,8 @@ def merge_batches(
     today = today or date.today()
     live_boards = {b.casefold() for b in (live_boards or set())}
     ids = readable_ids or set()
-    live_urls = {u.casefold() for u in (live_urls or set())}  # job-board paths: case-insensitive
+    live = live_urls if isinstance(live_urls, dict) else {u: {} for u in (live_urls or set())}
+    live_urls = {u.casefold(): info for u, info in live.items()}  # job-board paths: case-insensitive
     unique: list[Candidate] = []
     by_url: dict[str, int] = {}
     by_key: dict[tuple[str, str], list[int]] = {}
@@ -236,6 +277,13 @@ def merge_batches(
 
             if (board_from_url(r.url) or "").casefold() in live_boards and url.casefold() not in live_urls:
                 stats["closed"] += 1  # its company board is live and no longer lists it
+                continue
+            official = live_urls.get(url.casefold()) or {}
+            if official.get("location") or official.get("posted_date"):
+                r = r.model_copy(update={"location": official.get("location") or r.location,
+                                         "posted_date": official.get("posted_date") or r.posted_date})
+            if linkedin_stale(r.url):
+                stats["too_old"] += 1
                 continue
 
             if not location_ok(r.location, places):

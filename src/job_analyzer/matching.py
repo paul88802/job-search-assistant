@@ -15,6 +15,7 @@ from typing import Literal
 
 from job_analyzer.models import LEVEL_ORDER, JobRequirements, LanguageRequirement
 from job_analyzer.profile import Priority, Profile
+from job_analyzer.search import open_to_ok
 
 Outcome = Literal["match", "mismatch", "unknown"]
 
@@ -69,7 +70,12 @@ def check_location(job: JobRequirements, profile: Profile) -> Check:
     if not profile.locations:
         return _check(name, "match", prio, "No location preference")
     if job.remote_policy == "remote":
-        return _check(name, "match", prio, "Remote role: location doesn't matter")
+        places = [p for pl in profile.locations for p in (pl.city, pl.country) if p]
+        if not open_to_ok(job.open_to, places):
+            # Not a preference: the company can't hire someone living elsewhere, so always a must.
+            return _check(name, "mismatch", "hard", f"Remote, but only for people in {', '.join(job.open_to)}")
+        where = f" (open to {', '.join(job.open_to)})" if job.open_to else ""
+        return _check(name, "match", prio, f"Remote role{where}")
     if job.location is None or job.location.country is None:
         return _check(name, "unknown", prio, "Posting doesn't state a location")
 

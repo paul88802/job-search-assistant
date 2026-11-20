@@ -18,7 +18,7 @@ from job_analyzer import paths
 from job_analyzer.jobs import JobRecord
 from job_analyzer.matching import MatchReport, evaluate
 from job_analyzer.profile import Profile
-from job_analyzer.search import load_candidates, load_manual_check, load_statuses
+from job_analyzer.search import linkedin_stale, load_candidates, load_manual_check, load_statuses
 
 FIT_WEIGHT = 0.6
 
@@ -159,7 +159,7 @@ def render_markdown(included: list[Ranked], excluded: list[Ranked], top: int) ->
 
 def _manual_section() -> list[str]:
     """Postings only found on sites that block automated reading (e.g. LinkedIn)."""
-    manual = load_manual_check()
+    manual = [c for c in load_manual_check() if not linkedin_stale(c.url)]  # also lists saved before the check
     if not manual:
         return []
     lines = ["## Check these yourself (site blocks automated reading)", "",

@@ -35,8 +35,8 @@ On Windows, call the venv executables directly (no activation needed):
   - `.claude/agents/posting-analyst`: one per posting; imports the job and a fit judgement
 - Code does the deterministic steps: `live` (open jobs from Greenhouse/Lever/Ashby public APIs,
   the Remote OK API and WWR RSS; boards discovered from search hits into `watch_boards`; full text
-  saved to `data/inbox/live/`), `merge` (drop search hits their live board no longer lists, region/age
-  filters, dedupe by company + title + date posted, readable queue vs. check-yourself list), `next`
+  saved to `data/inbox/live/`), `merge` (drop search hits their live board no longer lists, give the rest the board's
+  official location + date, region/age filters, old LinkedIn job IDs = stale, dedupe by company + title + date posted, readable queue vs. check-yourself list), `next`
   (backfill from analyst status files, max 3× target attempts) and `shortlist`.
 - Prefer official APIs/feeds over scraping pages. Lever/Ashby board tokens are case-sensitive:
   keep their original case, compare with `.casefold()`.
@@ -61,7 +61,8 @@ On Windows, call the venv executables directly (no activation needed):
 - Output schemas are Pydantic models in `models.py`. Normalize values during extraction
   (English names, CEFR levels, ISO currencies, YYYY-MM-DD dates) so code can compare them.
 - Claude extracts and judges; plain code compares and ranks (`matching.py`, `ranking.py`,
-  `search.py` have no AI). Missing data is "unknown", never a rejection.
+  `search.py` have no AI). Missing data is "unknown", never a rejection;
+  a remote job open only to other countries (`open_to`) is always excluded (they can't hire you).
 - Tests must not call the real API: inject a fake client. Tests also never touch the real
   `data/`: an autouse fixture points `JOB_ANALYZER_DATA` at a temp folder.
 - All file locations come from `paths.py` (functions, not constants).

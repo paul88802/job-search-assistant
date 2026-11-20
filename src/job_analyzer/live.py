@@ -110,7 +110,7 @@ def fetch_lever(token: str, get: Getter) -> list[LiveJob]:
     jobs = []
     for j in data:
         cats = j.get("categories") or {}
-        loc = cats.get("location")
+        loc = "; ".join(cats.get("allLocations") or []) or cats.get("location")  # every place it's open to
         if j.get("workplaceType") in ("remote", "hybrid") and loc:
             loc = f"{loc} ({j['workplaceType']})"
         lists = "\n".join(f"{li.get('text', '')}\n{html_to_text(li.get('content', ''))}" for li in j.get("lists", []))
@@ -127,7 +127,8 @@ def fetch_ashby(token: str, get: Getter) -> list[LiveJob]:
     for j in data.get("jobs", []):
         if j.get("isListed") is False:
             continue
-        loc = j.get("location")
+        places = [j.get("location")] + [s.get("location") for s in j.get("secondaryLocations") or []]
+        loc = "; ".join(p for p in places if p) or None  # every place it's open to
         if j.get("isRemote") and loc and "remote" not in loc.lower():
             loc = f"Remote - {loc}"
         jobs.append(LiveJob(url=j["jobUrl"], title=j["title"], company=token, location=loc,
@@ -208,7 +209,7 @@ class LiveResult:
     batch: SearchBatch
     texts: dict[str, str] = field(default_factory=dict)       # candidate id -> full job text
     boards_ok: set[str] = field(default_factory=set)          # boards fetched successfully
-    live_urls: set[str] = field(default_factory=set)          # every open job on those boards
+    live_urls: dict[str, dict] = field(default_factory=dict)  # every open job on those boards -> official location/date
     stats: dict = field(default_factory=dict)
 
 
@@ -242,7 +243,8 @@ def collect_live(profile: Profile, boards: list[str], get: Getter = http_get,
             continue
         if name.split(":")[0] in ATS_HOSTS:
             result.boards_ok.add(name)
-            result.live_urls.update(normalize_url(j.url) for j in jobs)
+            result.live_urls.update({normalize_url(j.url): {"location": j.location, "posted_date": j.posted_date}
+                                     for j in jobs})
         for j in jobs:
             stats["jobs_seen"] += 1
             result.texts[url_id(j.url)] = j.text  # every open job: search hits can use it too
@@ -285,17 +287,21 @@ def save_live_run(result: LiveResult, out_batch) -> None:
     paths.live_index_file().write_text(json.dumps({
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "boards_ok": sorted(result.boards_ok),
-        "live_urls": sorted(result.live_urls),
+        "live_urls": dict(sorted(result.live_urls.items())),
     }, indent=2), encoding="utf-8")
 
 
-def load_live_index(max_age_hours: int = 6) -> tuple[set[str], set[str]]:
-    """(boards fetched OK, open job URLs) from a recent `live` run; empty if none or too old."""
+def load_live_index(max_age_hours: int = 6) -> tuple[set[str], dict[str, dict]]:
+    """(boards fetched OK, open job URL -> official location/date) from a recent `live` run.
+
+    Empty if none or too old. An index from an older version (a plain URL list) has no details.
+    """
     f = paths.live_index_file()
     if not f.exists():
-        return set(), set()
+        return set(), {}
     data = json.loads(f.read_text(encoding="utf-8"))
     age = datetime.now(timezone.utc) - datetime.fromisoformat(data["created_at"])
     if age.total_seconds() > max_age_hours * 3600:
-        return set(), set()
-    return set(data["boards_ok"]), set(data["live_urls"])
+        return set(), {}
+    urls = data["live_urls"]
+    return set(data["boards_ok"]), urls if isinstance(urls, dict) else {u: {} for u in urls}

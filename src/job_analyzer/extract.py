@@ -28,6 +28,7 @@ or "unknown" instead of guessing.
 - Separate required skills from optional ones ("nice to have", "a plus", "bonus", \
 "preferred").
 - Write countries, cities and language names in English, whatever the posting's language.
+- For a remote job, list where candidates may live in open_to ("US only" -> ['United States']; \n"Remote, EMEA" -> ['EMEA']). A remote job is often limited to some countries: look for it.
 - Salary numbers are plain numbers; "5k" means 5000. Use ISO currency codes.
 - Dates are YYYY-MM-DD. Relative dates ("3 days ago") are computed from today's date, which is \
 given before the posting.
