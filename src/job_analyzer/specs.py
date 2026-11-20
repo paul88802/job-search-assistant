@@ -49,7 +49,9 @@ SALARY_RULES = """\
 Estimate the pay of ONE job posting that states no salary, for the candidate in the brief.
 
 - Contract: take it from the posting ("contractor", "freelance", "B2B" = contractor; payroll or
-  "permanent contract" = employee). If it isn't stated, use "unknown" and assume employee for the numbers.
+  "permanent contract" = employee). If it isn't stated, use "unknown" and price the most likely
+  arrangement (a foreign company with no entity in the candidate's country usually pays
+  contractors); say which one in `basis`.
 - Market: price the job where the candidate would be employed and taxed. A Belgian employer:
   the Belgian market. A foreign company hiring remotely: that company's pay for Europe-based
   hires. A contractor: the realistic monthly invoiced amount.

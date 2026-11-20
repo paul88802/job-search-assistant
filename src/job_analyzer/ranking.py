@@ -81,8 +81,9 @@ def salary_line(rec: JobRecord) -> str | None:
     e = rec.salary_estimate
     if e is None:
         return None
+    gross = "invoiced" if e.contract_type == "contractor" else "gross"
     return (
-        f"Salary (estimate, {e.confidence} confidence, not an offer): gross {_money(e.gross_monthly_low)}–"
+        f"Salary (estimate, {e.confidence} confidence, not an offer): {gross} {_money(e.gross_monthly_low)}–"
         f"{_money(e.gross_monthly_high)} {e.currency}/month · net ≈ {_money(e.net_monthly_low)}–"
         f"{_money(e.net_monthly_high)} {e.currency}/month ({e.contract_type}). {e.basis}"
     )
