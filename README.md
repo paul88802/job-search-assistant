@@ -13,7 +13,8 @@ I built it for my own job search.
 | ✅ | **Posting analyzer:** turns a messy job posting into clean, typed data: title, seniority, skills, languages, location, remote policy, salary, red flags |
 | ✅ | **Your profile, pre-filled from your CV:** a one-time setup reads your CV (PDF or text) and suggests job titles, keywords, location and languages; you add work arrangement and minimum salary |
 | ✅ | **Preference check:** each posting is checked against your profile. Every preference is a *must* (a mismatch removes the job) or a *preference* (a mismatch only lowers the score). Missing information never removes a job, it's flagged instead |
-| ✅ | **Application copy kit:** a local page with one-click *Copy* buttons for every job, degree and certification in your CV (each field, each entry, or a whole section), copied word for word, for application forms that make you retype your CV |
+| ✅ | **Application copy kit:** a local page with one-click *Copy* buttons for your contact details and every job, degree and certification in your CV (each field, each entry, or a whole section), copied word for word, for application forms that make you retype your CV |
+| ✅ | **Salary estimate:** when a posting states no pay, Claude estimates a monthly gross and net range for your level and the contract offered (employee or contractor), with its assumptions and a confidence level, clearly marked as an estimate |
 | ✅ | **Multi-agent job search** (`/find-jobs`, Claude Code): searches your chosen job sites in parallel, removes duplicates, reads the best postings in parallel, judges your CV fit with evidence, and returns a ranked shortlist with links, gaps and coverage |
 | ✅ | **CV fit:** a 0-100 fit score with matching skills (with evidence), gaps and how to address them, shown next to a plain keyword-match baseline |
 | 🔜 | **Job tracker (MCP server):** saves postings and application status; works from Claude Desktop / Claude Code |
@@ -183,6 +184,7 @@ data/           # Your CV and applications (git-ignored)
 | Three outcomes per check: match / mismatch / unknown | A posting that doesn't mention salary shouldn't be thrown away |
 | Must vs. preference per criterion | Lets a job slightly below your salary minimum rank lower instead of disappearing |
 | CV PDFs sent directly as a `document` block | Claude reads the PDF itself, so no conversion step is needed |
+| Salary estimates are a separate, labelled record with stated assumptions and confidence | An estimate must never look like the employer's offer; code refuses one when the posting already states pay |
 | Copy kit text is extracted *verbatim* | Application text must be the candidate's own words, so the prompt and schema forbid rewriting |
 | CV extraction cached by CV file hash **and** rules version (prompt + schema) | Same CV and same rules → no new API call; changing either re-reads the CV, so results are never stale |
 | Required languages stored as "any of" groups | Expresses "English + French **or** Dutch", common in multilingual countries; "nice to have" languages never exclude a job |

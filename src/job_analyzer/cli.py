@@ -100,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("file", type=Path)
     p.add_argument("--url", help="job: link to the original posting (enables dedupe + provenance)")
     p.add_argument("--site", help="job: domain the posting was found on")
-    p.add_argument("--job", dest="job_id", help="fit: the JOB_ID printed when the job was imported")
+    p.add_argument("--job", dest="job_id", help="fit, salary-estimate: the JOB_ID printed when the job was imported")
     p.set_defaults(run=lambda a: do_import(a.kind, a.file, a.url, a.site, a.job_id))
 
     sub.add_parser("brief", help="Print the candidate brief for subagents").set_defaults(

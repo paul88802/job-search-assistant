@@ -12,7 +12,7 @@ import json
 from pydantic import BaseModel, Field
 
 from job_analyzer import cv, extract
-from job_analyzer.models import CVDetails, CVFacts, FitAssessment, JobRequirements
+from job_analyzer.models import CVDetails, CVFacts, FitAssessment, JobRequirements, SalaryEstimate
 from job_analyzer.profile import Profile
 from job_analyzer.search import SearchBatch
 
@@ -43,6 +43,24 @@ Judge how well the candidate (see the candidate brief) fits ONE job posting.
 - Every matching skill needs evidence from the brief (which job or certification).
 - Don't re-judge location, work arrangement, salary or languages: code already checks those.
 - Be honest: a generous score wastes the candidate's time on applications that won't work.
+"""
+
+SALARY_RULES = """\
+Estimate the pay of ONE job posting that states no salary, for the candidate in the brief.
+
+- Contract: take it from the posting ("contractor", "freelance", "B2B" = contractor; payroll or
+  "permanent contract" = employee). If it isn't stated, use "unknown" and assume employee for the numbers.
+- Market: price the job where the candidate would be employed and taxed. A Belgian employer:
+  the Belgian market. A foreign company hiring remotely: that company's pay for Europe-based
+  hires. A contractor: the realistic monthly invoiced amount.
+- Level: a realistic range for THIS candidate's experience and the role's seniority, not the
+  top of the market band.
+- Net: the take-home after social security and income tax in the candidate's country of
+  residence, for a single person with no dependents and no extras (company car, meal vouchers,
+  bonus). For a contractor: after their own social contributions and tax as a self-employed person.
+- Say every assumption in `basis`. Your salary knowledge may be outdated and you have no live
+  market data, so be honest in `confidence` (usually "low" or "medium").
+- This is an estimate to prepare a salary conversation, never the employer's offer.
 """
 
 SEARCH_RULES = """\
@@ -91,6 +109,7 @@ SPECS: dict[str, tuple[str, type[BaseModel]]] = {
     "cv-details": (cv.DETAILS_SYSTEM_PROMPT, CVDetails),
     "profile": (PROFILE_RULES, Profile),
     "fit": (FIT_RULES, FitAssessment),
+    "salary-estimate": (SALARY_RULES, SalaryEstimate),
     "search-batch": (SEARCH_RULES, SearchBatch),
 }
 

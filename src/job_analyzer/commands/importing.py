@@ -47,6 +47,13 @@ def do_import(kind: str, file: Path, url: str | None = None, site: str | None = 
             raise ValueError("Importing a fit needs --job <JOB_ID> (printed when the job was imported).")
         rec = jobs.attach_fit(job_id, obj)
         print(f"Saved fit {obj.fit_score}/100 for {rec.job.title} @ {rec.job.company} (JOB_ID={rec.id})")
+    elif kind == "salary-estimate":
+        if not job_id:
+            raise ValueError("Importing a salary estimate needs --job <JOB_ID>.")
+        rec = jobs.attach_salary_estimate(job_id, obj)
+        print(f"Saved salary estimate for {rec.job.title} @ {rec.job.company}: gross "
+              f"{obj.gross_monthly_low:.0f}-{obj.gross_monthly_high:.0f} {obj.currency}/month, "
+              f"net ~{obj.net_monthly_low:.0f}-{obj.net_monthly_high:.0f} ({obj.confidence} confidence)")
     elif kind == "profile":
         saved = save_profile(obj)
         print(f"Saved {saved}:\n{describe(obj)}")

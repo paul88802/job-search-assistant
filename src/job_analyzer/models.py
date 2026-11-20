@@ -12,7 +12,7 @@ are *normalized* during extraction, so plain Python can compare them reliably.
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 Seniority = Literal["intern", "junior", "mid", "senior", "lead", "unknown"]
 RemotePolicy = Literal["remote", "hybrid", "onsite", "unknown"]
@@ -160,9 +160,21 @@ class Certification(BaseModel):
     )
 
 
+class ContactInfo(BaseModel):
+    full_name: str | None = Field(description="Candidate's full name." + VERBATIM + " Null if not stated.")
+    email: str | None = Field(description="Email address as written, or null.")
+    phone: str | None = Field(description="Phone number as written, including country code, or null.")
+    address: str | None = Field(description="Postal address as written (street, number, postcode, city), or null.")
+    linkedin: str | None = Field(description="LinkedIn profile URL if the CV shows it, else null. Never guess a URL.")
+    website: str | None = Field(description="Personal website or portfolio URL, or null.")
+
+
 class CVDetails(BaseModel):
     """Full CV sections, copied verbatim, for filling in application forms."""
 
+    contact: ContactInfo | None = Field(
+        default=None, description="The candidate's contact details from the CV header or contact section."
+    )
     experience: list[WorkExperience] = Field(description="Every job, in the same order as the CV.")
     education: list[Education] = Field(description="Every education entry, in CV order.")
     certifications: list[Certification] = Field(
@@ -195,6 +207,43 @@ class FitAssessment(BaseModel):
         if not 0 <= v <= 100:
             raise ValueError("fit_score must be between 0 and 100")
         return v
+
+
+class SalaryEstimate(BaseModel):
+    """Claude's estimate of what a job pays, for postings that state no salary.
+
+    An estimate from the model's general market knowledge, NOT an offer and not live market
+    data: confidence says how much to trust it, and `basis` states every assumption.
+    """
+
+    contract_type: Literal["employee", "contractor", "unknown"] = Field(
+        description="Contract the posting offers: 'employee' (payroll), 'contractor' (freelance/B2B invoicing), or 'unknown'."
+    )
+    currency: str = Field(description="ISO currency code, e.g. 'EUR'.")
+    gross_monthly_low: float = Field(description="Low end of a realistic monthly gross for THIS candidate's level.")
+    gross_monthly_high: float = Field(description="High end of a realistic monthly gross for THIS candidate's level.")
+    net_monthly_low: float = Field(description="Estimated monthly take-home for the low end.")
+    net_monthly_high: float = Field(description="Estimated monthly take-home for the high end.")
+    basis: str = Field(
+        description=(
+            "Every assumption in one or two sentences: country of employment/tax, contract, "
+            "household situation, what's excluded (bonus, car, meal vouchers)."
+        )
+    )
+    confidence: Literal["low", "medium", "high"] = Field(
+        description="How reliable this is. Without stated pay or live market data it's rarely 'high'."
+    )
+    reasoning: str = Field(description="One or two sentences: which posting details drove the estimate.")
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        if self.gross_monthly_low > self.gross_monthly_high or self.net_monthly_low > self.net_monthly_high:
+            raise ValueError("low must not be above high")
+        if self.net_monthly_high > self.gross_monthly_high:
+            raise ValueError("net must not be above gross")
+        if min(self.gross_monthly_low, self.net_monthly_low) <= 0:
+            raise ValueError("amounts must be positive")
+        return self
 
 
 class CVFacts(BaseModel):

@@ -69,6 +69,25 @@ def records_from_latest_run(records: list[JobRecord]) -> list[JobRecord]:
     return [r for r in records if r.retrieved_at >= run["started_at"]]
 
 
+def _money(x: float) -> str:
+    return f"{x:,.0f}".replace(",", " ")
+
+
+def salary_line(rec: JobRecord) -> str | None:
+    """The stated salary, or else the estimate, clearly labelled as one."""
+    s = rec.job.salary
+    if s is not None:
+        return f"Salary (stated): {s.raw_text}"
+    e = rec.salary_estimate
+    if e is None:
+        return None
+    return (
+        f"Salary (estimate, {e.confidence} confidence, not an offer): gross {_money(e.gross_monthly_low)}–"
+        f"{_money(e.gross_monthly_high)} {e.currency}/month · net ≈ {_money(e.net_monthly_low)}–"
+        f"{_money(e.net_monthly_high)} {e.currency}/month ({e.contract_type}). {e.basis}"
+    )
+
+
 def render_markdown(included: list[Ranked], excluded: list[Ranked], top: int) -> str:
     also_on = {c.id: c.also_seen_at for c in load_candidates()}
     out = [f"# Job shortlist ({datetime.now():%d %b %Y, %H:%M})", ""]
@@ -94,6 +113,9 @@ def render_markdown(included: list[Ranked], excluded: list[Ranked], top: int) ->
                 out.append(f"- How to address: {fit.how_to_address}")
         else:
             out.append(f"- Fit not assessed (keyword baseline {kw})")
+        line = salary_line(r.record)
+        if line:
+            out.append(f"- {line}")
         flags = [c.detail for c in r.report.checks if c.outcome != "match"]
         out.append(f"- Preferences {r.report.score}/100" + (f". Check: {'; '.join(flags)}" if flags else ""))
         if j.red_flags:

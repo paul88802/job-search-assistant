@@ -13,7 +13,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from pydantic import BaseModel
 
 from job_analyzer import paths
-from job_analyzer.models import FitAssessment, JobRequirements
+from job_analyzer.models import FitAssessment, JobRequirements, SalaryEstimate
 
 TRACKING_PARAMS = {"refid", "trackingid", "trk", "gh_src", "source", "src", "ref", "lever-source"}
 
@@ -25,6 +25,7 @@ class JobRecord(BaseModel):
     retrieved_at: str  # ISO 8601, UTC
     job: JobRequirements
     fit: FitAssessment | None = None
+    salary_estimate: SalaryEstimate | None = None  # only for postings that state no salary
 
 
 def normalize_url(url: str) -> str:
@@ -72,8 +73,9 @@ def add_job(job: JobRequirements, url: str | None = None, site: str | None = Non
     """Save a posting. Re-importing the same link updates the same record (no duplicates)."""
     rec = JobRecord(id=make_id(url, job), source_url=url, site=site, retrieved_at=now_iso(), job=job)
     old = load_record(rec.id)
-    if old and old.fit:
-        rec.fit = old.fit  # keep an earlier fit judgement unless replaced explicitly
+    if old:  # keep earlier judgements unless replaced explicitly
+        rec.fit = old.fit
+        rec.salary_estimate = old.salary_estimate
     save_record(rec)
     return rec
 
@@ -90,6 +92,17 @@ def attach_fit(job_id: str, fit: FitAssessment) -> JobRecord:
     if rec is None:
         raise ValueError(f"No saved job with id {job_id}. Import the job first.")
     rec.fit = fit
+    save_record(rec)
+    return rec
+
+
+def attach_salary_estimate(job_id: str, estimate: SalaryEstimate) -> JobRecord:
+    rec = load_record(job_id)
+    if rec is None:
+        raise ValueError(f"No saved job with id {job_id}. Import the job first.")
+    if rec.job.salary is not None:
+        raise ValueError("This posting states a salary; an estimate is only for postings without one.")
+    rec.salary_estimate = estimate
     save_record(rec)
     return rec
 

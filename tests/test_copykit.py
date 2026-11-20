@@ -111,3 +111,18 @@ def test_details_prompt_demands_verbatim(tmp_path):
     load_cv_details(cv, cache=tmp_path / "c.json", client=client)
     assert "EXACTLY as written" in client.calls[0]["system"]
     assert client.calls[0]["output_format"] is CVDetails
+
+
+def test_contact_section_first_with_phone():
+    from job_analyzer.models import ContactInfo
+    d = DETAILS.model_copy(deep=True)
+    d.contact = ContactInfo(full_name="Jane Doe", email="jane@example.com", phone="+32 400 00 00 00",
+                            address=None, linkedin=None, website=None)
+    html = build_html(d, "cv.pdf")
+    assert html.index("Contact details") < html.index("Work experience")
+    assert 'data-copy="+32 400 00 00 00"' in html
+    assert "Address" not in html  # empty fields get no row
+
+
+def test_old_cache_without_contact_still_loads():
+    assert CVDetails.model_validate({"experience": [], "education": [], "certifications": []}).contact is None

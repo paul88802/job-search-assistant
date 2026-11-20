@@ -102,8 +102,17 @@ def build_html(d: CVDetails, cv_name: str) -> str:
         for c, t in zip(d.certifications, cert_texts)
     ]
     generated = datetime.now().strftime("%d %b %Y, %H:%M")
+    contact_section = ""
+    c = d.contact
+    if c and any((c.full_name, c.email, c.phone, c.address, c.linkedin, c.website)):
+        fields = [("Full name", c.full_name), ("Email", c.email), ("Phone", c.phone),
+                  ("Address", c.address), ("LinkedIn", c.linkedin), ("Website", c.website)]
+        all_text = "\n".join(v for _, v in fields if v)
+        contact_section = _section("Contact details", [_card(c.full_name or "Contact", all_text, fields)],
+                                   [all_text])
     body = (
-        _section("Work experience", exp_cards, exp_texts)
+        contact_section
+        + _section("Work experience", exp_cards, exp_texts)
         + _section("Education", edu_cards, edu_texts)
         + _section("Certifications", cert_cards, cert_texts)
     )
