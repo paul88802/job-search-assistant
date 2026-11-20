@@ -209,41 +209,81 @@ class FitAssessment(BaseModel):
         return v
 
 
-class SalaryEstimate(BaseModel):
-    """Claude's estimate of what a job pays, for postings that state no salary.
-
-    An estimate from the model's general market knowledge, NOT an offer and not live market
-    data: confidence says how much to trust it, and `basis` states every assumption.
-    """
-
-    contract_type: Literal["employee", "contractor", "unknown"] = Field(
-        description="Contract the posting offers: 'employee' (payroll), 'contractor' (freelance/B2B invoicing), or 'unknown'."
-    )
-    currency: str = Field(description="ISO currency code, e.g. 'EUR'.")
-    gross_monthly_low: float = Field(description="Low end of a realistic monthly gross for THIS candidate's level.")
-    gross_monthly_high: float = Field(description="High end of a realistic monthly gross for THIS candidate's level.")
-    net_monthly_low: float = Field(description="Estimated monthly take-home for the low end.")
-    net_monthly_high: float = Field(description="Estimated monthly take-home for the high end.")
-    basis: str = Field(
-        description=(
-            "Every assumption in one or two sentences: country of employment/tax, contract, "
-            "household situation, what's excluded (bonus, car, meal vouchers)."
-        )
-    )
-    confidence: Literal["low", "medium", "high"] = Field(
-        description="How reliable this is. Without stated pay or live market data it's rarely 'high'."
-    )
-    reasoning: str = Field(description="One or two sentences: which posting details drove the estimate.")
+class PayRange(BaseModel):
+    gross_monthly_low: float = Field(description="Low end, monthly gross (contractors: monthly invoiced amount).")
+    gross_monthly_high: float = Field(description="High end, monthly gross (contractors: monthly invoiced amount).")
+    net_monthly_low: float = Field(description="Monthly take-home for the low end.")
+    net_monthly_high: float = Field(description="Monthly take-home for the high end.")
 
     @model_validator(mode="after")
     def _consistent(self):
         if self.gross_monthly_low > self.gross_monthly_high or self.net_monthly_low > self.net_monthly_high:
             raise ValueError("low must not be above high")
-        if self.net_monthly_high > self.gross_monthly_high:
+        if self.net_monthly_low > self.gross_monthly_low or self.net_monthly_high > self.gross_monthly_high:
             raise ValueError("net must not be above gross")
         if min(self.gross_monthly_low, self.net_monthly_low) <= 0:
             raise ValueError("amounts must be positive")
         return self
+
+
+class SalarySource(BaseModel):
+    name: str = Field(description="Who published the figure, e.g. 'Paylab Belgium, Cloud Engineer'.")
+    url: str = Field(description="The page the figure comes from (a page you actually opened or got as a search result).")
+    figure: str = Field(description="What it says, with its period and gross/net, e.g. '€6,800/month gross at 5 years'.")
+
+
+class SalaryEstimate(BaseModel):
+    """Claude's estimate of what a job pays, for postings that state no salary.
+
+    Two measures: what the market pays for the ROLE, and where THIS candidate would likely
+    land. Not an offer: sources show where the numbers come from, and confidence says how
+    much to trust them.
+    """
+
+    contract_type: Literal["employee", "contractor", "unknown"] = Field(
+        description="Contract the posting offers: 'employee' (payroll), 'contractor' (freelance/B2B invoicing), or 'unknown'."
+    )
+    priced_as: Literal["employee", "contractor"] = Field(
+        description="The arrangement the numbers assume (the most likely one when contract_type is 'unknown')."
+    )
+    pay_market: str = Field(
+        description=(
+            "Whose pay scale applies, e.g. 'Belgian market', 'US company paying international "
+            "contractors in USD', 'European remote band of a US start-up'."
+        )
+    )
+    currency: str = Field(description="ISO currency code of all amounts, e.g. 'EUR'.")
+    market: PayRange = Field(description="What the market pays for this ROLE at the level the posting asks for.")
+    for_you: PayRange = Field(description="Where THIS candidate would likely land, given their experience and fit.")
+    months_per_year: float = Field(
+        description="Paid months per year: 13.92 for a Belgian employee (13th month + double holiday pay), 12 for a contractor."
+    )
+    basis: str = Field(
+        description=(
+            "Every assumption in one or two sentences: country of tax, household, exchange rate, "
+            "contractor expenses, what's excluded (bonus, car, meal vouchers, equity)."
+        )
+    )
+    sources: list[SalarySource] = Field(
+        description="Salary data the figures are based on. Empty only if nothing could be found."
+    )
+    confidence: Literal["low", "medium", "high"] = Field(
+        description="How reliable this is. 'low' without sources; 'high' only with the company's own pay band."
+    )
+    reasoning: str = Field(
+        description="Two or three sentences: what set the market band and why the candidate lands where they do."
+    )
+
+    @model_validator(mode="after")
+    def _grounded(self):
+        if not self.sources and self.confidence != "low":
+            raise ValueError("an estimate without sources must have confidence 'low'")
+        if not 12 <= self.months_per_year <= 15:
+            raise ValueError("months_per_year must be between 12 and 15")
+        return self
+
+    def yearly_gross(self, r: PayRange) -> tuple[float, float]:
+        return r.gross_monthly_low * self.months_per_year, r.gross_monthly_high * self.months_per_year
 
 
 class CVFacts(BaseModel):

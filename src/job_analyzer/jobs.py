@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError, field_validator
 
 from job_analyzer import paths
 from job_analyzer.models import FitAssessment, JobRequirements, SalaryEstimate
@@ -26,6 +26,15 @@ class JobRecord(BaseModel):
     job: JobRequirements
     fit: FitAssessment | None = None
     salary_estimate: SalaryEstimate | None = None  # only for postings that state no salary
+
+    @field_validator("salary_estimate", mode="wrap")
+    @classmethod
+    def _drop_outdated_estimate(cls, value, handler):
+        """An estimate saved in an older format is dropped (re-estimate it), not fatal to the job."""
+        try:
+            return handler(value)
+        except ValidationError:
+            return None
 
 
 def normalize_url(url: str) -> str:

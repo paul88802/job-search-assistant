@@ -1,7 +1,7 @@
 ---
 name: posting-analyst
 description: Reads ONE job posting from its link, extracts it into the shared schema, and judges the candidate's fit with evidence. Used by /find-jobs. The task prompt must contain the candidate brief, the posting URL, its site and a working-file prefix.
-tools: WebFetch, Read, Write, Bash
+tools: WebFetch, WebSearch, Read, Write, Bash
 model: sonnet
 hooks:
   PreToolUse:
@@ -44,8 +44,10 @@ coverage gaps, so a missing status file means a lost result.
    Write the JSON to `<prefix>-fit.json`, then run
    `job-analyzer import fit <prefix>-fit.json --job <JOB_ID>` (fix and retry the same way).
 
-4. Salary: only if the job you extracted has `"salary": null`, run `job-analyzer spec salary-estimate`,
-   follow it (candidate brief for the level, posting for the contract and employer country), write
+4. Salary: only if the job you extracted has `"salary": null`, run `job-analyzer spec salary-estimate`
+   and follow it: research the company's pay and the role's market pay with 2-4 web searches,
+   then give both the role's market band and where the candidate would land (candidate brief
+   for their level, posting for the contract and the employer's country). Write
    `<prefix>-salary.json`, then run `job-analyzer import salary-estimate <prefix>-salary.json --job <JOB_ID>`.
    Skip this step when the posting states a salary.
 

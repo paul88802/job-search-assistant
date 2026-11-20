@@ -74,19 +74,40 @@ def _money(x: float) -> str:
 
 
 def salary_line(rec: JobRecord) -> str | None:
-    """The stated salary, or else the estimate, clearly labelled as one."""
+    """The stated salary, or else the estimate, clearly labelled as one (may span several lines)."""
     s = rec.job.salary
     if s is not None:
         return f"Salary (stated): {s.raw_text}"
     e = rec.salary_estimate
     if e is None:
         return None
-    gross = "invoiced" if e.contract_type == "contractor" else "gross"
-    return (
-        f"Salary (estimate, {e.confidence} confidence, not an offer): {gross} {_money(e.gross_monthly_low)}–"
-        f"{_money(e.gross_monthly_high)} {e.currency}/month · net ≈ {_money(e.net_monthly_low)}–"
-        f"{_money(e.net_monthly_high)} {e.currency}/month ({e.contract_type}). {e.basis}"
-    )
+    gross = "invoiced" if e.priced_as == "contractor" else "gross"
+    cur = e.currency
+
+    def rng(lo: float, hi: float) -> str:
+        return f"{_money(lo)}–{_money(hi)} {cur}"
+
+    def describe(r) -> str:
+        y_lo, y_hi = e.yearly_gross(r)
+        n = e.months_per_year
+
+        def yearly(lo: float, hi: float) -> str:  # estimates: no false precision
+            return rng(round(lo, -2), round(hi, -2))
+
+        return (f"{gross} {rng(r.gross_monthly_low, r.gross_monthly_high)}/month "
+                f"(≈ {yearly(y_lo, y_hi)}/year) · net ≈ {rng(r.net_monthly_low, r.net_monthly_high)}/month "
+                f"(≈ {yearly(r.net_monthly_low * n, r.net_monthly_high * n)}/year)")
+
+    contract = e.priced_as if e.contract_type != "unknown" else f"{e.priced_as}, contract not stated"
+    lines = [
+        f"Salary estimate ({e.confidence} confidence, not an offer; {contract}; {e.pay_market}):",
+        f"  - Market for this role: {describe(e.market)}",
+        f"  - For you: {describe(e.for_you)}",
+        f"  - Why: {e.reasoning} Assumes: {e.basis}",
+    ]
+    if e.sources:
+        lines.append("  - Sources: " + "; ".join(f"[{s.name}]({s.url}): {s.figure}" for s in e.sources))
+    return "\n".join(lines)
 
 
 def render_markdown(included: list[Ranked], excluded: list[Ranked], top: int) -> str:
