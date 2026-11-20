@@ -86,3 +86,7 @@ def shortlists_dir() -> Path:
 
 def applications_file() -> Path:
     return data_dir() / "applications.json"
+
+
+def shortlist_page() -> Path:
+    return data_dir() / "shortlist.html"

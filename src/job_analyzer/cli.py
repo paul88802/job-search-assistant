@@ -128,7 +128,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("shortlist", help="Rank the analyzed postings of the latest run")
     p.add_argument("--top", type=int, default=10)
     p.add_argument("--all", action="store_true", help="Rank every saved posting, not just the latest run")
-    p.set_defaults(run=lambda a: do_shortlist(a.top, a.all))
+    p.add_argument("--no-open", action="store_true", help="Write data/shortlist.html without opening it")
+    p.set_defaults(run=lambda a: do_shortlist(a.top, a.all, not a.no_open))
 
     p = sub.add_parser("track", help="Track your applications: add, update, list")
     p.add_argument("action", choices=["add", "update", "list"], nargs="?", default="list")

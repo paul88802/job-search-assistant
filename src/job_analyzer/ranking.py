@@ -161,9 +161,13 @@ def render_markdown(included: list[Ranked], excluded: list[Ranked], top: int) ->
     return "\n".join(out)
 
 
-def _manual_section() -> list[str]:
+def manual_candidates():
     """Postings only found on sites that block automated reading (e.g. LinkedIn)."""
-    manual = [c for c in load_manual_check() if not linkedin_stale(c.url)]  # also lists saved before the check
+    return [c for c in load_manual_check() if not linkedin_stale(c.url)]  # also lists saved before the check
+
+
+def _manual_section() -> list[str]:
+    manual = manual_candidates()
     if not manual:
         return []
     lines = ["## Check these yourself (site blocks automated reading)", "",
@@ -183,25 +187,28 @@ def _analysis_errors() -> list[dict]:
 
 
 def _coverage_section() -> list[str]:
-    """Report what could NOT be searched or read, so gaps are visible instead of silently missing."""
+    items = coverage_items()
+    return ["## Coverage", ""] + [f"- {i}" for i in items or ["No coverage data (run /find-jobs to search)."]]
+
+
+def coverage_items() -> list[str]:
+    """What could NOT be searched or read, so gaps are visible instead of silently missing."""
     coverage = _read_json(paths.coverage_file()) or {}
-    lines = ["## Coverage", ""]
+    lines: list[str] = []
     for group, s in (coverage.get("groups") or {}).items():
         status = "searched" if not s["errors"] else f"{s['errors']} failed search(es)"
-        lines.append(f"- {group}: {s['results']} result(s), {s['queries']} quer(ies), {status}")
+        lines.append(f"{group}: {s['results']} result(s), {s['queries']} quer(ies), {status}")
     stats = coverage.get("stats")
     if stats:
         lines.append(
-            f"- {stats.get('found', 0)} found · {stats.get('duplicates', 0)} duplicates · "
+            f"{stats.get('found', 0)} found · {stats.get('duplicates', 0)} duplicates · "
             f"{stats.get('already_analyzed', 0)} analyzed in earlier runs · "
             f"{stats.get('other_location', 0)} other location · {stats.get('too_old', 0)} too old · "
             f"{stats.get('readable', stats.get('picked', 0))} readable · "
             f"{stats.get('manual_check', 0)} to check yourself")
     for e in coverage.get("errors", []):
         retry = "temporary" if e.get("retryable") else "not retryable"
-        lines.append(f"- ⚠ Search failed on {e['site']} ({e['error_type']}, {retry}): {e['detail']}")
+        lines.append(f"⚠ Search failed on {e['site']} ({e['error_type']}, {retry}): {e['detail']}")
     for e in _analysis_errors():
-        lines.append(f"- ⚠ Couldn't analyze {e.get('url', '?')} ({e.get('error_type', 'error')}): {e.get('detail', '')}")
-    if len(lines) == 2:
-        lines.append("- No coverage data (run /find-jobs to search).")
+        lines.append(f"⚠ Couldn't analyze {e.get('url', '?')} ({e.get('error_type', 'error')}): {e.get('detail', '')}")
     return lines

@@ -75,7 +75,8 @@ Repeat, at most 3 times:
 You don't need to record errors: each analyst writes `<prefix>-status.json`, and code reads them.
 
 ## 8. Shortlist (code)
-Run `job-analyzer shortlist`. Present to the user:
+Run `job-analyzer shortlist`. It also writes `data/shortlist.html` and opens it in the browser
+(cards with fit, pay, applied status and links). Tell the user the page is open, then present:
 - the top postings: title, company, date posted, overall score, link (plus "also on" links such
   as LinkedIn), fit summary, gaps and how to address them
 - the excluded postings with their reason, in one line each

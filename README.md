@@ -15,7 +15,7 @@ I built it for my own job search.
 | ✅ | **Preference check:** each posting is checked against your profile. Every preference is a *must* (a mismatch removes the job) or a *preference* (a mismatch only lowers the score). Missing information never removes a job, it's flagged instead |
 | ✅ | **Application copy kit:** a local page with one-click *Copy* buttons for your contact details and every job, degree and certification in your CV (each field, each entry, or a whole section), copied word for word, for application forms that make you retype your CV |
 | ✅ | **Salary estimate:** when a posting states no pay, Claude estimates a monthly gross and net range for your level and the contract offered (employee or contractor), with its assumptions and a confidence level, clearly marked as an estimate |
-| ✅ | **Multi-agent job search** (`/find-jobs`, Claude Code): searches your chosen job sites in parallel, removes duplicates, reads the best postings in parallel, judges your CV fit with evidence, and returns a ranked shortlist with links, gaps and coverage |
+| ✅ | **Multi-agent job search** (`/find-jobs`, Claude Code): searches your chosen job sites in parallel, removes duplicates, reads the best postings in parallel, judges your CV fit with evidence, and opens a ranked shortlist page: sortable job cards with fit, gaps, pay estimate, applied status and links, plus your applications, excluded jobs and coverage |
 | ✅ | **CV fit:** a 0-100 fit score with matching skills (with evidence), gaps and how to address them, shown next to a plain keyword-match baseline |
 | ✅ | **Application tracker (CLI + MCP server):** records where you applied and each status change (interviewing, offer, rejected...), tells you when to follow up, and marks applied jobs in the shortlist. In Claude Code, just say "I applied to the Acme Corp job" |
 | 🔜 | **Application helper:** tailored CV bullets and a cover-letter draft per posting |
@@ -175,6 +175,7 @@ src/job_analyzer/
   live.py       # Live sources: company job-board APIs, Remote OK API, WWR feeds (no AI)
   brief.py      # Candidate brief handed to subagents
   ranking.py    # Shortlist ranking + coverage report (no AI)
+  shortlist_page.py # The shortlist as a local web page (HTML-escaped, no AI)
   tracker.py    # Application tracker: statuses, history, follow-up rules (no AI)
   mcp_server.py # The tracker as MCP tools (thin wrapper over tracker.py)
   commands/     # The work behind each CLI command (cli.py only parses arguments)

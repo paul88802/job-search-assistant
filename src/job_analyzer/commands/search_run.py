@@ -2,6 +2,7 @@
 
 import json
 import sys
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from job_analyzer.profile import (
 )
 from job_analyzer.ranking import rank, records_from_latest_run, render_markdown
 from job_analyzer.search import SearchBatch, job_key, merge_batches, next_batch, write_run_files
+from job_analyzer.shortlist_page import write_page
 from job_analyzer.specs import validation_errors
 
 MAX_WATCHED_BOARDS = 60  # keeps a run's number of live API calls bounded
@@ -131,7 +133,7 @@ def do_next(wave: int) -> int:
     return 0
 
 
-def do_shortlist(top: int, all_runs: bool) -> int:
+def do_shortlist(top: int, all_runs: bool, open_page: bool = True) -> int:
     profile = _require_profile()
     records = jobs.all_records()
     if not all_runs:
@@ -144,4 +146,8 @@ def do_shortlist(top: int, all_runs: bool) -> int:
     out.write_text(text, encoding="utf-8")
     print(text)
     print(f"\nSaved {out}")
+    page = write_page(included, excluded)
+    print(f"Page: {page.resolve()}")
+    if open_page:
+        webbrowser.open(page.resolve().as_uri())
     return 0
