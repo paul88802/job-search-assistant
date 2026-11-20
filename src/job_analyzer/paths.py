@@ -82,3 +82,7 @@ def manual_check_file() -> Path:
 
 def shortlists_dir() -> Path:
     return data_dir() / "shortlists"
+
+
+def applications_file() -> Path:
+    return data_dir() / "applications.json"

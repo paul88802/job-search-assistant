@@ -17,7 +17,7 @@ I built it for my own job search.
 | ✅ | **Salary estimate:** when a posting states no pay, Claude estimates a monthly gross and net range for your level and the contract offered (employee or contractor), with its assumptions and a confidence level, clearly marked as an estimate |
 | ✅ | **Multi-agent job search** (`/find-jobs`, Claude Code): searches your chosen job sites in parallel, removes duplicates, reads the best postings in parallel, judges your CV fit with evidence, and returns a ranked shortlist with links, gaps and coverage |
 | ✅ | **CV fit:** a 0-100 fit score with matching skills (with evidence), gaps and how to address them, shown next to a plain keyword-match baseline |
-| 🔜 | **Job tracker (MCP server):** saves postings and application status; works from Claude Desktop / Claude Code |
+| ✅ | **Application tracker (CLI + MCP server):** records where you applied and each status change (interviewing, offer, rejected...), tells you when to follow up, and marks applied jobs in the shortlist. In Claude Code, just say "I applied to the Acme Corp job" |
 | 🔜 | **Application helper:** tailored CV bullets and a cover-letter draft per posting |
 
 ## Two ways to run it
@@ -143,6 +143,18 @@ Run the tests (no API key needed; they use a fake client):
 .venv\Scripts\python -m pytest
 ```
 
+Track your applications (a job's link or the JOB_ID from the shortlist):
+
+```bash
+.venv\Scripts\job-analyzer track add https://jobs.example.com/123 --on 2026-11-20
+.venv\Scripts\job-analyzer track update https://jobs.example.com/123 interviewing --note "call on Tuesday"
+.venv\Scripts\job-analyzer track            # open applications + what to do next
+```
+
+In Claude Code the tracker is also an MCP server (`.mcp.json`, starts `job-analyzer-mcp`), so
+Claude can record applications when you mention them. Approve the `job-tracker` server when
+Claude Code asks. On macOS/Linux, change `.venv/Scripts/` to `.venv/bin/` in `.mcp.json`.
+
 Your own CV and applications go in `data/`, which is git-ignored, so personal data never gets committed.
 
 ## Project structure
@@ -163,6 +175,8 @@ src/job_analyzer/
   live.py       # Live sources: company job-board APIs, Remote OK API, WWR feeds (no AI)
   brief.py      # Candidate brief handed to subagents
   ranking.py    # Shortlist ranking + coverage report (no AI)
+  tracker.py    # Application tracker: statuses, history, follow-up rules (no AI)
+  mcp_server.py # The tracker as MCP tools (thin wrapper over tracker.py)
   commands/     # The work behind each CLI command (cli.py only parses arguments)
 .claude/skills/ # Claude Code mode: /setup-profile, /find-jobs, /analyze-job, /copy-kit
 .claude/agents/ # Subagents: job-board-scout, job-searcher, posting-analyst
@@ -179,6 +193,7 @@ data/           # Your CV and applications (git-ignored)
 |----------|-----|
 | Structured outputs (`messages.parse` + Pydantic) instead of "please reply in JSON" | The API guarantees schema-valid output, so there's no fragile JSON parsing |
 | Nullable fields and an `"unknown"` option in the schema | Gives the model an honest answer when a posting omits something, instead of inventing it |
+| Tracker as a small MCP server that only wraps `tracker.py` | The CLI and Claude share one set of rules; the server can touch nothing but the tracker file, and a broken rule comes back to Claude as a tool error with the reason |
 | Claude *extracts*, plain code *compares* | Reading messy text needs a language model; checking "is 4,500 ≥ 4,000" doesn't. The comparison is free, instant, testable and explainable |
 | Values normalized during extraction (English place names, CEFR levels, ISO currencies, numeric salary) | So the comparison code can be simple and exact |
 | Three outcomes per check: match / mismatch / unknown | A posting that doesn't mention salary shouldn't be thrown away |

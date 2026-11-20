@@ -14,10 +14,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+mcp = ["mcp>=2.0"]
+dev = ["pytest>=8.0", "mcp>=2.0"]
 
 [project.scripts]
 job-analyzer = "job_analyzer.cli:main"
+job-analyzer-mcp = "job_analyzer.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/job_analyzer"]

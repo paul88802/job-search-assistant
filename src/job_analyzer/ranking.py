@@ -18,6 +18,7 @@ from job_analyzer import paths
 from job_analyzer.jobs import JobRecord
 from job_analyzer.matching import MatchReport, evaluate
 from job_analyzer.profile import Profile
+from job_analyzer.tracker import load_applications
 from job_analyzer.search import linkedin_stale, load_candidates, load_manual_check, load_statuses
 
 FIT_WEIGHT = 0.6
@@ -112,6 +113,7 @@ def salary_line(rec: JobRecord) -> str | None:
 
 def render_markdown(included: list[Ranked], excluded: list[Ranked], top: int) -> str:
     also_on = {c.id: c.also_seen_at for c in load_candidates()}
+    applied = load_applications()
     out = [f"# Job shortlist ({datetime.now():%d %b %Y, %H:%M})", ""]
     if not included and not excluded:
         out.append("No analyzed postings in this run.")
@@ -119,6 +121,8 @@ def render_markdown(included: list[Ranked], excluded: list[Ranked], top: int) ->
         j, fit = r.record.job, r.record.fit
         where = f"{j.location or 'location not stated'}, {j.remote_policy}"
         out.append(f"## {i}. {j.title} @ {j.company or 'unknown company'} ({r.overall}/100)")
+        if (a := applied.get(r.record.id)) is not None:
+            out.append(f"**✓ Applied {a.applied_on or '(date unknown)'} · status: {a.status}**")
         posted = f"posted {j.posted_date}" if j.posted_date else "posting date not shown"
         out.append(f"{where} · {posted} · found on {r.record.site or 'pasted'} on {r.record.retrieved_at[:10]}")
         if r.record.source_url:

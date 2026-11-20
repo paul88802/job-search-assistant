@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "job-tracker": {
+      "type": "stdio",
+      "command": ".venv/Scripts/job-analyzer-mcp",
+      "args": []
+    }
+  }
+}

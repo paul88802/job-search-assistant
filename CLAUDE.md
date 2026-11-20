@@ -16,6 +16,8 @@ On Windows, call the venv executables directly (no activation needed):
 - Setup: `.venv\Scripts\job-analyzer setup` (needs `ANTHROPIC_API_KEY` if a CV is in `data/`)
 - Run: `.venv\Scripts\job-analyzer analyze samples/sample_posting.txt` (needs `ANTHROPIC_API_KEY`)
 - Copy kit: `.venv\Scripts\job-analyzer copy-kit` (writes `data/copy-kit.html`; cached in `data/cv_details.json`)
+- Tracker: `.venv\Scripts\job-analyzer track [add|update|list]`; also the `job-tracker` MCP server
+  (`job_analyzer.mcp_server`, registered in `.mcp.json`). Its tools only wrap `tracker.py`.
 
 ## Two modes
 

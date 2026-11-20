@@ -3,6 +3,7 @@
   job-analyzer setup                 create or redo your profile (API mode)
   job-analyzer analyze <posting.txt> analyze a posting against your profile (API mode)
   job-analyzer copy-kit              page with copy buttons for your experience/education/certs
+  job-analyzer track                 your applications and what to do next (add/update/list)
 
 Claude Code mode (no API key; used by the skills and agents in .claude/):
   job-analyzer spec <kind>           print the shared rules + JSON schema
@@ -23,6 +24,8 @@ from pathlib import Path
 import anthropic
 
 from job_analyzer.commands.api_mode import do_analyze, do_setup
+from job_analyzer.commands.tracking import do_track
+from job_analyzer.tracker import STATUSES
 from job_analyzer.commands.copy_kit import do_copy_kit
 from job_analyzer.commands.importing import do_import
 from job_analyzer.commands.search_run import (
@@ -126,6 +129,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--top", type=int, default=10)
     p.add_argument("--all", action="store_true", help="Rank every saved posting, not just the latest run")
     p.set_defaults(run=lambda a: do_shortlist(a.top, a.all))
+
+    p = sub.add_parser("track", help="Track your applications: add, update, list")
+    p.add_argument("action", choices=["add", "update", "list"], nargs="?", default="list")
+    p.add_argument("job", nargs="?", help="The posting's link or JOB_ID")
+    p.add_argument("status", nargs="?", choices=STATUSES, help="update: the new status")
+    p.add_argument("--on", help="Date (YYYY-MM-DD): when you applied / when it changed. Default: unknown / today")
+    p.add_argument("--note", help="A short note, e.g. 'referred by Jane'")
+    p.add_argument("--title", help="add: job title, for a job the tool never saved")
+    p.add_argument("--company", help="add: company, for a job the tool never saved")
+    p.add_argument("--all", action="store_true", help="list: include closed applications")
+    p.set_defaults(run=lambda a: do_track(a.action, a.job, a.status, a.on, a.note, a.title, a.company, a.all))
     return parser
 
 
